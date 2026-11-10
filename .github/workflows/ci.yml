@@ -1,0 +1,40 @@
+name: SmartMatch CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Run Automated Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ensure uploads directory exists
+        run: mkdir -p uploads
+
+      - name: Execute Automated Test Suite
+        run: bash scripts/test.sh
+        env:
+          FLASK_ENV: testing
+          TESTING: "true"
+          MONGODB_URI: "mock"
+          SECRET_KEY: "github-actions-ci-secret-key-smartmatch"
+          JWT_SECRET_KEY: "github-actions-ci-jwt-secret-key-smartmatch"
+          UPLOAD_FOLDER: "uploads"

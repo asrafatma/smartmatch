@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartMatch — AI-Powered Campus Lost & Found</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Navigation Bar -->
+  <header class="navbar">
+    <div class="nav-container">
+      <div class="nav-brand" onclick="navigate('landing')">
+        <div class="brand-logo">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            <path d="M11 8v6"></path>
+            <path d="M8 11h6"></path>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">SmartMatch</span>
+          <span class="brand-badge">Campus AI</span>
+        </div>
+      </div>
+
+      <nav class="nav-links">
+        <a href="#landing" onclick="navigate('landing')" class="nav-link active" data-view="landing">Home</a>
+        <a href="#reports" onclick="navigate('reports')" class="nav-link" data-view="reports">Browse Reports</a>
+        <a href="#submit-lost" onclick="navigate('submit-lost')" class="nav-link" data-view="submit-lost">Lost an Item</a>
+        <a href="#submit-found" onclick="navigate('submit-found')" class="nav-link" data-view="submit-found">Found an Item</a>
+        <a href="#claims" onclick="navigate('claims')" class="nav-link auth-required" data-view="claims">Claims Review</a>
+        <a href="#my-reports" onclick="navigate('my-reports')" class="nav-link auth-required" data-view="my-reports">My Items</a>
+        <a href="#admin" onclick="navigate('admin')" class="nav-link admin-only" data-view="admin">Admin</a>
+      </nav>
+
+      <div class="nav-auth">
+        <div id="auth-logged-out" class="auth-buttons">
+          <button class="btn btn-outline btn-sm" onclick="openAuthModal('login')">Log In</button>
+          <button class="btn btn-primary btn-sm" onclick="openAuthModal('register')">Register</button>
+        </div>
+        <div id="auth-logged-in" class="auth-user hidden">
+          <div class="user-pill" onclick="toggleUserDropdown()">
+            <div class="avatar" id="nav-avatar">U</div>
+            <span id="nav-user-name">User</span>
+            <span class="role-tag" id="nav-role-tag">Student</span>
+          </div>
+          <div id="user-dropdown" class="dropdown-menu hidden">
+            <div class="dropdown-header">
+              <strong id="dropdown-user-name">User</strong>
+              <small id="dropdown-user-email">user@campus.edu</small>
+            </div>
+            <div class="dropdown-divider"></div>
+            <a href="#my-reports" onclick="navigate('my-reports')" class="dropdown-item">My Reports & Claims</a>
+            <a href="#claims" onclick="navigate('claims')" class="dropdown-item">Claims Review Desk</a>
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item text-danger" onclick="logout()">Log Out</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Quick Judge Banner -->
+  <aside class="judge-strip" id="judge-strip">
+    <div class="judge-content">
+      <span class="judge-title">⚖️ Competition Judge Quick-Access:</span>
+      <span class="judge-desc">1-click test accounts with pre-loaded synthetic lost & found pairs</span>
+      <div class="judge-actions">
+        <button class="btn btn-xs btn-judge" onclick="quickLogin('alice@campus.edu', 'student123')">👤 Alice (Student / Lost Item)</button>
+        <button class="btn btn-xs btn-judge" onclick="quickLogin('bob@campus.edu', 'finder123')">🔍 Bob (Finder / Found Item)</button>
+        <button class="btn btn-xs btn-judge" onclick="quickLogin('admin@campus.edu', 'admin123')">🛡️ Admin (Campus Moderation)</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content Container -->
+  <main class="main-container">
+
+    <!-- ========================================== -->
+    <!-- VIEW: LANDING PAGE -->
+    <!-- ========================================== -->
+    <section id="view-landing" class="app-view">
+      <div class="hero-section">
+        <div class="hero-badge">AI Assistance &bull; Deterministic Matching &bull; Verified Privacy</div>
+        <h1 class="hero-title">Reuniting Campus Belongings with <span class="text-gradient">Intelligent Precision</span></h1>
+        <p class="hero-subtitle">
+          SmartMatch combines multimodal Gemini AI for structured attribute extraction with a transparent 100-point deterministic ranking engine. Ownership claims remain securely verified by human finders without exposing private personal details.
+        </p>
+
+        <div class="hero-cta">
+          <button class="btn btn-primary btn-lg" onclick="navigate('submit-lost')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            I Lost Something
+          </button>
+          <button class="btn btn-secondary btn-lg" onclick="navigate('submit-found')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            I Found Something
+          </button>
+          <button class="btn btn-outline btn-lg" onclick="navigate('reports')">Browse Campus Catalog</button>
+        </div>
+      </div>
+
+      <!-- Live Campus Metrics -->
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-value text-primary" id="metric-lost">0</div>
+          <div class="metric-label">Lost Reports Filed</div>
+          <div class="metric-sub">Actively searching</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value text-success" id="metric-found">0</div>
+          <div class="metric-label">Found Items Logged</div>
+          <div class="metric-sub">Awaiting verification</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value text-accent" id="metric-resolved">0</div>
+          <div class="metric-label">Items Returned</div>
+          <div class="metric-sub">Verified handover</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value text-warning" id="metric-claims">0</div>
+          <div class="metric-label">Active Claims</div>
+          <div class="metric-sub">Under review</div>
+        </div>
+      </div>
+
+      <!-- How SmartMatch Works -->
+      <div class="section-container">
+        <div class="section-header text-center">
+          <h2>Engineered for Trust & Accuracy</h2>
+          <p class="section-desc">AI extracts attributes &bull; Deterministic logic ranks &bull; Humans verify</p>
+        </div>
+
+        <div class="steps-grid">
+          <div class="step-card">
+            <div class="step-num">01</div>
+            <h3>Multimodal Extraction</h3>
+            <p>Upload a mandatory photograph with a brief description. Gemini AI extracts colors, materials, shapes, brands, and distinctive features into structured JSON.</p>
+          </div>
+          <div class="step-card">
+            <div class="step-num">02</div>
+            <h3>Human-Confirmed Attributes</h3>
+            <p>Students inspect and modify AI suggestions before saving. If AI is unavailable, manual attribute entry ensures uninterrupted submission.</p>
+          </div>
+          <div class="step-card">
+            <div class="step-num">03</div>
+            <h3>100-Point Deterministic Engine</h3>
+            <p>A transparent Python algorithm evaluates category, object type, color, materials, brand, features, location, and dates with clear score breakdowns.</p>
+          </div>
+          <div class="step-card">
+            <div class="step-num">04</div>
+            <h3>Private Ownership Handover</h3>
+            <p>Claimants submit private verification answers. Finders or admins review claims. Contact details are never released until verified.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- VIEW: BROWSE REPORTS -->
+    <!-- ========================================== -->
+    <section id="view-reports" class="app-view hidden">
+      <div class="page-header">
+        <div>
+          <h2>Campus Lost & Found Catalog</h2>
+          <p class="text-muted">Browse active student reports across all university locations</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-outline btn-sm" onclick="navigate('submit-lost')">+ Report Lost</button>
+          <button class="btn btn-primary btn-sm" onclick="navigate('submit-found')">+ Report Found</button>
+        </div>
+      </div>
+
+      <!-- Filters & Search Toolbar -->
+      <div class="toolbar-card">
+        <div class="search-box">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="report-search-input" placeholder="Search by title, description, or campus building..." oninput="debounceSearch()">
+        </div>
+        <div class="filter-group">
+          <select id="filter-type" onchange="loadReports()">
+            <option value="">All Types (Lost & Found)</option>
+            <option value="lost">Lost Items Only</option>
+            <option value="found">Found Items Only</option>
+          </select>
+
+          <select id="filter-category" onchange="loadReports()">
+            <option value="">All Categories</option>
+            <option value="electronics">Electronics</option>
+            <option value="personal_accessory">Personal Accessory (Wallet/Watch)</option>
+            <option value="bag_backpack">Bags & Backpacks</option>
+            <option value="key_id">Keys & Student IDs</option>
+            <option value="bottle_container">Bottles & Tumblers</option>
+            <option value="stationery">Stationery & Books</option>
+            <option value="clothing">Clothing & Apparel</option>
+            <option value="other">Other</option>
+          </select>
+
+          <select id="filter-status" onchange="loadReports()">
+            <option value="active">Active Reports</option>
+            <option value="claim_pending">Claim Pending</option>
+            <option value="resolved">Resolved / Handed Over</option>
+            <option value="">All Statuses</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Reports Grid -->
+      <div id="reports-grid" class="reports-grid">
+        <!-- Rendered dynamically via JS -->
+      </div>
+      <div id="reports-empty" class="empty-state hidden">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <h3>No matching reports found</h3>
+        <p class="text-muted">Try modifying your filters, search keywords, or submit a new report.</p>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- VIEW: SUBMIT REPORT (LOST / FOUND) -->
+    <!-- ========================================== -->
+    <section id="view-submit" class="app-view hidden">
+      <div class="page-header">
+        <div>
+          <h2 id="submit-form-title">Submit Lost Item Report</h2>
+          <p class="text-muted">Every report requires a valid photograph to enable AI attribute extraction and deterministic matching.</p>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="navigate('reports')">&larr; Back to Catalog</button>
+      </div>
+
+      <div class="form-layout">
+        <!-- Form Left: Primary Inputs -->
+        <div class="card form-card">
+          <form id="report-form" onsubmit="handleReportSubmit(event)">
+            <input type="hidden" id="form-report-type" value="lost">
+
+            <div class="form-group">
+              <label>Report Type <span class="text-danger">*</span></label>
+              <div class="type-toggle-group">
+                <button type="button" class="btn btn-toggle active" id="btn-toggle-lost" onclick="setFormReportType('lost')">
+                  🔍 Lost Item (I am searching for this)
+                </button>
+                <button type="button" class="btn btn-toggle" id="btn-toggle-found" onclick="setFormReportType('found')">
+                  📦 Found Item (I found this on campus)
+                </button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="form-title">Item Title <span class="text-danger">*</span></label>
+              <input type="text" id="form-title" required placeholder="e.g. Black Leather Bifold Wallet with Student ID" maxlength="120">
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="form-category">Category <span class="text-danger">*</span></label>
+                <select id="form-category" required>
+                  <option value="">Select Category...</option>
+                  <option value="personal_accessory">Personal Accessory (Wallet, Watch, Jewelry)</option>
+                  <option value="electronics">Electronics (Phone, Laptop, Charger, Headphones)</option>
+                  <option value="bag_backpack">Bags & Backpacks</option>
+                  <option value="bottle_container">Water Bottles & Drinkware</option>
+                  <option value="key_id">Keys & Student Cards</option>
+                  <option value="stationery">Stationery & Notebooks</option>
+                  <option value="clothing">Clothing & Outerwear</option>
+                  <option value="other">Other Campus Belongings</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="form-date">Incident Date <span class="text-danger">*</span></label>
+                <input type="date" id="form-date" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="form-location">Campus Location <span class="text-danger">*</span></label>
+              <input type="text" id="form-location" required placeholder="e.g. Science Building 2nd Floor, Main Library Study Room B">
+            </div>
+
+            <div class="form-group">
+              <label for="form-description">Description <span class="text-danger">*</span></label>
+              <textarea id="form-description" rows="4" required placeholder="Describe appearance, brand name, distinctive stickers, scratches, or details known to you..."></textarea>
+              <small class="form-help">Detailed descriptions assist both Gemini multimodal extraction and deterministic scoring.</small>
+            </div>
+
+            <!-- Mandatory Photo Upload -->
+            <div class="form-group">
+              <label>Item Photograph <span class="text-danger">* (Mandatory)</span></label>
+              <div class="dropzone" id="image-dropzone" onclick="document.getElementById('form-image-input').click()">
+                <input type="file" id="form-image-input" accept="image/png, image/jpeg, image/jpg, image/webp" class="hidden" onchange="previewUploadImage(this)">
+                <div id="dropzone-placeholder" class="dropzone-content">
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  <p><strong>Click to browse or drop photograph here</strong></p>
+                  <span class="text-muted">PNG, JPG, or WEBP up to 10MB</span>
+                </div>
+                <div id="dropzone-preview" class="dropzone-preview hidden">
+                  <img id="preview-img" src="" alt="Upload Preview">
+                  <button type="button" class="btn btn-xs btn-danger btn-remove-img" onclick="removeUploadImage(event)">Remove Photo</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Manual / Review Attributes Accordion -->
+            <div class="card attribute-editor-card">
+              <div class="editor-header">
+                <div>
+                  <strong>Custom / Confirmed Attributes (Optional)</strong>
+                  <p class="text-muted text-xs">AI will extract these automatically, but you may pre-fill or refine them here.</p>
+                </div>
+                <span class="badge badge-info">Deterministic Inputs</span>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="text-xs">Color(s)</label>
+                  <input type="text" id="attr-color" placeholder="e.g. black, silver (comma-separated)">
+                </div>
+                <div class="form-group">
+                  <label class="text-xs">Material(s)</label>
+                  <input type="text" id="attr-material" placeholder="e.g. leather, stainless steel">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="text-xs">Brand or Logo</label>
+                  <input type="text" id="attr-brand" placeholder="e.g. Apple, Hydro Flask, Nike">
+                </div>
+                <div class="form-group">
+                  <label class="text-xs">Distinctive Features</label>
+                  <input type="text" id="attr-features" placeholder="e.g. astronaut sticker, chipped corner">
+                </div>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary btn-lg w-100" id="btn-submit-report">
+                <span id="submit-btn-spinner" class="spinner hidden"></span>
+                <span id="submit-btn-text">Submit Report & Run AI Extraction</span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Form Right: Information & Guidelines -->
+        <div class="info-sidebar">
+          <div class="card info-card">
+            <h3>How AI Extraction Works</h3>
+            <ul class="info-list">
+              <li><strong>Multimodal Analysis:</strong> Gemini analyzes your photo and description simultaneously.</li>
+              <li><strong>Separation of Facts:</strong> Visual observations are distinguished from user-stated claims and unknowns.</li>
+              <li><strong>No Hallucinated Data:</strong> AI is constrained from guessing invisible contents or unreadable brands.</li>
+              <li><strong>Manual Fallback:</strong> If Gemini is unreachable, rule-based extraction activates instantly.</li>
+            </ul>
+          </div>
+
+          <div class="card info-card">
+            <h3>Privacy Notice</h3>
+            <p class="text-muted text-sm">
+              Your email address is never published publicly. Only an approved ownership claimant and the finder receive authorized handover contacts.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- VIEW: REPORT DETAIL & MATCHES -->
+    <!-- ========================================== -->
+    <section id="view-report-detail" class="app-view hidden">
+      <div class="page-header">
+        <button class="btn btn-outline btn-sm" onclick="navigate('reports')">&larr; Back to Catalog</button>
+        <div id="detail-actions" class="header-actions">
+          <!-- Dynamic actions e.g. Claim Button, Edit, etc. -->
+        </div>
+      </div>
+
+      <div class="detail-layout">
+        <!-- Left: Item Overview -->
+        <div class="card detail-card" id="detail-card">
+          <!-- Populated by JS -->
+        </div>
+
+        <!-- Right: Deterministic Matches -->
+        <div class="matches-container">
+          <div class="matches-header">
+            <div>
+              <h3>Potential Matches</h3>
+              <p class="text-muted text-sm">Deterministic 100-point algorithm comparing confirmed attributes</p>
+            </div>
+            <button class="btn btn-outline btn-xs" onclick="refreshMatches()">🔄 Refresh</button>
+          </div>
+
+          <div id="matches-list" class="matches-list">
+            <!-- Populated by JS -->
+          </div>
+          <div id="matches-empty" class="empty-state-sm hidden">
+            <p class="text-muted">No active candidate matches found yet. The matching engine compares active opposing reports in real time.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- VIEW: CLAIMS REVIEW DESK -->
+    <!-- ========================================== -->
+    <section id="view-claims" class="app-view hidden">
+      <div class="page-header">
+        <div>
+          <h2>Ownership Verification Desk</h2>
+          <p class="text-muted">Finders and campus administrators review private verification details to authorize item handover.</p>
+        </div>
+      </div>
+
+      <div class="card claims-card">
+        <div class="claims-header">
+          <h3>Pending Claims for Review</h3>
+          <span class="badge badge-primary" id="pending-claims-count">0 Pending</span>
+        </div>
+        <div id="claims-review-list" class="claims-list">
+          <!-- Populated by JS -->
+        </div>
+        <div id="claims-review-empty" class="empty-state hidden">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          <h4>No pending claims requiring review</h4>
+          <p class="text-muted">When a student submits an ownership claim against an item you found, it will appear here for verification.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- VIEW: MY REPORTS & CLAIMS -->
+    <!-- ========================================== -->
+    <section id="view-my-reports" class="app-view hidden">
+      <div class="page-header">
+        <div>
+          <h2>My Reports & Claims</h2>
+          <p class="text-muted">Track the status of your reported items and claims</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-outline btn-sm" onclick="navigate('submit-lost')">+ Report Lost</button>
+          <button class="btn btn-primary btn-sm" onclick="navigate('submit-found')">+ Report Found</button>
+        </div>
+      </div>
+
+      <div class="tabs-container">
+        <button class="tab-btn active" onclick="switchMyTab('reports')">My Reported Items</button>
+        <button class="tab-btn" onclick="switchMyTab('claims')">My Submitted Claims</button>
+      </div>
+
+      <div id="my-items-tab" class="tab-content">
+        <div id="my-reports-grid" class="reports-grid">
+          <!-- Populated by JS -->
+        </div>
+        <div id="my-reports-empty" class="empty-state hidden">
+          <h4>You have not submitted any reports yet</h4>
+          <p class="text-muted">Submit a lost or found report to get started.</p>
+        </div>
+      </div>
+
+      <div id="my-claims-tab" class="tab-content hidden">
+        <div id="my-claims-list" class="claims-list">
+          <!-- Populated by JS -->
+        </div>
+        <div id="my-claims-empty" class="empty-state hidden">
+          <h4>No claims submitted</h4>
+          <p class="text-muted">When you identify your item in a found report, submit an ownership claim to initiate verification.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- VIEW: ADMIN DASHBOARD -->
+    <!-- ========================================== -->
+    <section id="view-admin" class="app-view hidden">
+      <div class="page-header">
+        <div>
+          <h2>Platform Administration & Oversight</h2>
+          <p class="text-muted">Campus-wide moderation, AI extraction logs, and audit trails</p>
+        </div>
+      </div>
+
+      <div class="admin-grid">
+        <div class="card admin-stats-card">
+          <h3>System Metrics</h3>
+          <div class="admin-stats-grid">
+            <div class="stat-box">
+              <span class="stat-num" id="admin-stat-users">0</span>
+              <span class="stat-label">Registered Users</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-num" id="admin-stat-lost">0</span>
+              <span class="stat-label">Lost Reports</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-num" id="admin-stat-found">0</span>
+              <span class="stat-label">Found Reports</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-num" id="admin-stat-claims">0</span>
+              <span class="stat-label">Pending Claims</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card admin-logs-card">
+          <h3>Recent Gemini AI Extraction Logs</h3>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Model</th>
+                  <th>Status</th>
+                  <th>Report ID</th>
+                  <th>Error / Fallback</th>
+                </tr>
+              </thead>
+              <tbody id="admin-ai-logs-tbody">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================== -->
+  <!-- MODAL: CLAIM SUBMISSION -->
+  <!-- ========================================== -->
+  <div id="claim-modal" class="modal-overlay hidden" onclick="handleModalOverlayClick(event, 'claim-modal')">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>Submit Ownership Claim</h3>
+        <button class="btn-close" onclick="closeModal('claim-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted text-sm mb-4">
+          Provide confidential details that verify your ownership. <strong>These answers are kept strictly private</strong> and only viewed by the finder/administrator.
+        </p>
+
+        <form id="claim-form" onsubmit="handleClaimSubmit(event)">
+          <input type="hidden" id="claim-report-id">
+
+          <div class="form-group">
+            <label for="claim-answers">Verification Evidence <span class="text-danger">*</span></label>
+            <textarea id="claim-answers" rows="5" required placeholder="e.g. Inside the wallet there is a blue metro pass behind the ID card. The keys have a chipped bronze skull keychain."></textarea>
+            <small class="form-help">Mention details not visible in the public photograph, hidden markings, internal contents, or exact circumstances.</small>
+          </div>
+
+          <div class="alert alert-info text-xs">
+            🔒 <strong>Verification Attempt Limit:</strong> You have up to 3 verification attempts. After 3 rejections, the claim is locked to prevent fraud.
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeModal('claim-modal')">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btn-submit-claim">Submit Verification</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL: AUTHENTICATION (LOGIN / REGISTER) -->
+  <!-- ========================================== -->
+  <div id="auth-modal" class="modal-overlay hidden" onclick="handleModalOverlayClick(event, 'auth-modal')">
+    <div class="modal-dialog modal-auth">
+      <div class="modal-header">
+        <h3 id="auth-modal-title">Sign In to SmartMatch</h3>
+        <button class="btn-close" onclick="closeModal('auth-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Auth Tabs -->
+        <div class="tabs-container mb-4">
+          <button class="tab-btn active" id="tab-auth-login" onclick="switchAuthTab('login')">Log In</button>
+          <button class="tab-btn" id="tab-auth-register" onclick="switchAuthTab('register')">Register</button>
+        </div>
+
+        <!-- 1-Click Judge Buttons -->
+        <div class="judge-quick-box">
+          <span class="text-xs font-semibold">Judge 1-Click Test Access:</span>
+          <div class="judge-btn-row">
+            <button class="btn btn-xs btn-outline" onclick="quickLogin('alice@campus.edu', 'student123')">Alice (Student)</button>
+            <button class="btn btn-xs btn-outline" onclick="quickLogin('bob@campus.edu', 'finder123')">Bob (Finder)</button>
+            <button class="btn btn-xs btn-outline" onclick="quickLogin('admin@campus.edu', 'admin123')">Admin</button>
+          </div>
+        </div>
+
+        <!-- Login Form -->
+        <form id="login-form" onsubmit="handleLoginSubmit(event)">
+          <div class="form-group">
+            <label for="login-email">Campus Email</label>
+            <input type="email" id="login-email" required placeholder="alice@campus.edu">
+          </div>
+          <div class="form-group">
+            <label for="login-password">Password</label>
+            <input type="password" id="login-password" required placeholder="••••••••">
+          </div>
+          <button type="submit" class="btn btn-primary w-100" id="btn-login-submit">Log In</button>
+        </form>
+
+        <!-- Register Form -->
+        <form id="register-form" class="hidden" onsubmit="handleRegisterSubmit(event)">
+          <div class="form-group">
+            <label for="reg-name">Full Name</label>
+            <input type="text" id="reg-name" required placeholder="Alice Chen">
+          </div>
+          <div class="form-group">
+            <label for="reg-email">Campus Email</label>
+            <input type="email" id="reg-email" required placeholder="alice@campus.edu">
+          </div>
+          <div class="form-group">
+            <label for="reg-password">Password (min 6 chars)</label>
+            <input type="password" id="reg-password" required minlength="6" placeholder="••••••••">
+          </div>
+          <div class="form-group">
+            <label for="reg-role">Role</label>
+            <select id="reg-role">
+              <option value="student">Student / Campus Member</option>
+              <option value="admin">Administrator (Moderation)</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary w-100" id="btn-reg-submit">Create Account</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
