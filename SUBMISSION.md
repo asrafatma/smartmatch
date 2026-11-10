@@ -5,8 +5,8 @@
 - **Team Name:** SmartMatch Team
 - **Repository URL:** [https://github.com/itsas/smartmatch](https://github.com/itsas/smartmatch) <!-- Pending final push -->
 - **Live Deployment URL:** [http://127.0.0.1:5000](http://127.0.0.1:5000) <!-- Locally running & verified; cloud URL placeholder: https://smartmatch-campus.onrender.com -->
-- **Submission Timestamp:** 2026-11-10T11:51:00+05:00
-- **Final Git Commit SHA:** `3c8b53270e5c656ff944cca0411c3bf9e8202aa3`
+- **Submission Timestamp:** 2026-11-10T11:51:30+05:00
+- **Final Git Commit SHA:** `1bf43e75f7049017c65e15ed93666f4f14b53eb9`
 
 ---
 
