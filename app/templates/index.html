@@ -307,14 +307,42 @@
               </div>
             </div>
 
-            <!-- Manual / Review Attributes Accordion -->
+            <!-- Private ownership clue (found reports only) -->
+            <div class="form-group hidden" id="clue-group">
+              <label for="form-verification-clue">🔒 Private Ownership Clue <span class="text-muted text-xs">(found items, strongly recommended)</span></label>
+              <input type="text" id="form-verification-clue" maxlength="300" placeholder="A detail NOT in your public description, e.g. 'metro pass behind the ID card'">
+              <small class="form-help">Never shown publicly. Claimants must mention these details; the server checks their answer automatically (max 3 attempts).</small>
+            </div>
+
+            <div class="alert alert-info text-xs">
+              ⚠️ Do not upload identity documents (CNIC, passport, student card faces) or include phone numbers in descriptions.
+            </div>
+
+            <!-- Step 2: AI suggestions review / manual attributes -->
             <div class="card attribute-editor-card">
               <div class="editor-header">
                 <div>
-                  <strong>Custom / Confirmed Attributes (Optional)</strong>
-                  <p class="text-muted text-xs">AI will extract these automatically, but you may pre-fill or refine them here.</p>
+                  <strong>Step 2 — Review Item Attributes</strong>
+                  <p class="text-muted text-xs">Click <em>Analyze with AI</em> to get suggestions from your photo and description, then edit them. If AI is unavailable, fill them in manually. These confirmed values drive the deterministic matcher.</p>
                 </div>
-                <span class="badge badge-info">Deterministic Inputs</span>
+                <span class="badge badge-info" id="ai-status-badge">Not analyzed</span>
+              </div>
+              <div class="form-actions" style="margin-bottom:0.75rem;">
+                <button type="button" class="btn btn-outline w-100" id="btn-analyze" onclick="analyzeReport()">
+                  <span id="analyze-spinner" class="spinner hidden"></span>
+                  <span id="analyze-btn-text">✨ Analyze with AI (suggestions only)</span>
+                </button>
+              </div>
+              <div id="ai-details" class="hidden text-xs" style="margin-bottom:0.75rem;"></div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="text-xs">Object Type</label>
+                  <input type="text" id="attr-object-type" placeholder="e.g. wallet, water bottle, backpack">
+                </div>
+                <div class="form-group">
+                  <label class="text-xs">Shape(s)</label>
+                  <input type="text" id="attr-shape" placeholder="e.g. rectangular, foldable">
+                </div>
               </div>
               <div class="form-row">
                 <div class="form-group">
@@ -341,7 +369,7 @@
             <div class="form-actions">
               <button type="submit" class="btn btn-primary btn-lg w-100" id="btn-submit-report">
                 <span id="submit-btn-spinner" class="spinner hidden"></span>
-                <span id="submit-btn-text">Submit Report & Run AI Extraction</span>
+                <span id="submit-btn-text">Confirm Attributes & Submit Report</span>
               </button>
             </div>
           </form>
@@ -556,7 +584,10 @@
           </div>
 
           <div class="alert alert-info text-xs">
-            🔒 <strong>Verification Attempt Limit:</strong> You have up to 3 verification attempts. After 3 rejections, the claim is locked to prevent fraud.
+            🔒 <strong>Server-checked verification:</strong> If the finder set a private clue, your answer is checked automatically. You have at most 3 attempts; after that the claim is locked. A verified claim still needs the finder's approval.
+          </div>
+          <div class="alert alert-warning text-xs">
+            ⚠️ Do not upload or type identity-document numbers (CNIC, passport) or other sensitive personal data.
           </div>
 
           <div class="modal-actions">
@@ -622,11 +653,12 @@
             <input type="password" id="reg-password" required minlength="6" placeholder="••••••••">
           </div>
           <div class="form-group">
-            <label for="reg-role">Role</label>
-            <select id="reg-role">
-              <option value="student">Student / Campus Member</option>
-              <option value="admin">Administrator (Moderation)</option>
-            </select>
+            <label for="reg-password-confirm">Confirm Password</label>
+            <input type="password" id="reg-password-confirm" required minlength="6" placeholder="••••••••">
+          </div>
+          <div class="form-group">
+            <label for="reg-admin-code">Admin invite code <span class="text-muted text-xs">(optional, staff only)</span></label>
+            <input type="password" id="reg-admin-code" autocomplete="off" placeholder="Leave blank for a student account">
           </div>
           <button type="submit" class="btn btn-primary w-100" id="btn-reg-submit">Create Account</button>
         </form>

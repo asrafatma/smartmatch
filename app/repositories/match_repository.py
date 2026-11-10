@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from bson import ObjectId
+from pymongo import ReturnDocument
 from app.repositories.db import get_db
 
 class MatchRepository:
@@ -29,11 +30,15 @@ class MatchRepository:
         found_id = doc.get("found_report_id")
         
         # Upsert by pair
+        doc["lost_report_id"] = str(lost_id)
+        doc["found_report_id"] = str(found_id)
+        doc.pop("candidate_report", None)
+        doc.pop("_id", None)
         res = db.matches.find_one_and_update(
             {"lost_report_id": str(lost_id), "found_report_id": str(found_id)},
             {"$set": doc},
             upsert=True,
-            return_document=True
+            return_document=ReturnDocument.AFTER
         )
         if res:
             return cls._format(res)

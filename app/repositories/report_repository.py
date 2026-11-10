@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from bson import ObjectId
 from app.repositories.db import get_db
@@ -48,56 +49,54 @@ class ReportRepository:
             return None
 
     @classmethod
-    def find_active_by_type(cls, report_type: str) -> list[dict]:
+    def find_active_by_type(cls, report_type: str, statuses: tuple = ("active",)) -> list[dict]:
         db = get_db()
         cursor = db.reports.find({
             "report_type": report_type,
-            "status": "active"
+            "status": {"$in": list(statuses)}
         }).sort("created_at", -1)
         return [cls._format(doc) for doc in cursor]
 
     @classmethod
+    def _build_query(cls, filters: dict = None) -> dict:
+        q = {}
+        if not filters:
+            return q
+        for k, v in filters.items():
+            if v is None or v == "":
+                continue
+            if k == "user_id" and isinstance(v, str):
+                try:
+                    q[k] = ObjectId(v)
+                except Exception:
+                    q[k] = v
+            elif k in ("report_type", "status", "category"):
+                q[k] = str(v)
+            elif k == "search":
+                # Case-insensitive literal search. Escape user input so it cannot inject regex
+                # operators (invalid patterns -> 500, or catastrophic backtracking).
+                pattern = re.escape(str(v)[:100])
+                q["$or"] = [
+                    {"title": {"$regex": pattern, "$options": "i"}},
+                    {"description": {"$regex": pattern, "$options": "i"}},
+                    {"location": {"$regex": pattern, "$options": "i"}}
+                ]
+            elif k == "location":
+                q["location"] = {"$regex": re.escape(str(v)[:100]), "$options": "i"}
+        return q
+
+    @classmethod
     def list_reports(cls, filters: dict = None, skip: int = 0, limit: int = 50) -> list[dict]:
         db = get_db()
-        q = {}
-        if filters:
-            for k, v in filters.items():
-                if v is not None and v != "":
-                    if k == "user_id" and isinstance(v, str):
-                        try:
-                            q[k] = ObjectId(v)
-                        except Exception:
-                            q[k] = v
-                    elif k in ("report_type", "status", "category"):
-                        q[k] = v
-                    elif k == "search":
-                        # Case-insensitive title/desc search
-                        q["$or"] = [
-                            {"title": {"$regex": v, "$options": "i"}},
-                            {"description": {"$regex": v, "$options": "i"}},
-                            {"location": {"$regex": v, "$options": "i"}}
-                        ]
-                    elif k == "location":
-                        q["location"] = {"$regex": v, "$options": "i"}
-
-        cursor = db.reports.find(q).sort("created_at", -1).skip(skip).limit(limit)
+        cursor = db.reports.find(cls._build_query(filters)).sort("created_at", -1).skip(skip).limit(limit)
         return [cls._format(doc) for doc in cursor]
 
     @classmethod
     def count(cls, filters: dict = None) -> int:
+        # Uses the same query as list_reports (previously search/location were ignored,
+        # so pagination totals were wrong when searching)
         db = get_db()
-        q = {}
-        if filters:
-            for k, v in filters.items():
-                if v is not None and v != "":
-                    if k == "user_id" and isinstance(v, str):
-                        try:
-                            q[k] = ObjectId(v)
-                        except Exception:
-                            q[k] = v
-                    elif k in ("report_type", "status", "category"):
-                        q[k] = v
-        return db.reports.count_documents(q)
+        return db.reports.count_documents(cls._build_query(filters))
 
     @classmethod
     def update(cls, report_id: str | ObjectId, update_data: dict) -> dict | None:

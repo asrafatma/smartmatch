@@ -4,6 +4,7 @@ from app.repositories.user_repository import UserRepository
 from app.repositories.report_repository import ReportRepository
 from app.repositories.claim_repository import ClaimRepository
 from app.repositories.ai_log_repository import AILogRepository
+from app.utils.validators import parse_int
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -22,7 +23,7 @@ def admin_dashboard():
     total_found = ReportRepository.count({"report_type": "found"})
     active_reports = ReportRepository.count({"status": "active"})
     resolved_reports = ReportRepository.count({"status": "resolved"})
-    pending_claims = len(ClaimRepository.list_all(status="pending"))
+    pending_claims = ClaimRepository.count_by_status("pending")
     recent_ai_logs = AILogRepository.list_logs(limit=10)
 
     return jsonify({
@@ -46,7 +47,7 @@ def admin_reports():
     if not check_admin_role():
         return jsonify({"success": False, "error": "Administrator privilege required"}), 403
 
-    limit = int(request.args.get("limit", 100))
+    limit = parse_int(request.args.get("limit"), default=100, minimum=1, maximum=500)
     reports = ReportRepository.list_reports(filters={}, limit=limit)
     return jsonify({
         "success": True,

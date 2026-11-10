@@ -17,7 +17,9 @@ def test_report_submission_mandatory_photo(client, student_auth_headers):
         content_type="multipart/form-data"
     )
     assert res.status_code == 400
-    assert "photograph is mandatory" in res.get_json()["error"].lower()
+    body = res.get_json()
+    assert body["code"] == "PHOTO_REQUIRED"
+    assert "photograph" in body["error"].lower()
 
 def test_report_submission_invalid_file_type(client, student_auth_headers):
     fake_txt = io.BytesIO(b"not an image file")
@@ -35,7 +37,8 @@ def test_report_submission_invalid_file_type(client, student_auth_headers):
         headers=student_auth_headers,
         content_type="multipart/form-data"
     )
-    assert res.status_code == 400
+    # Spec 7.3: unsupported media type / invalid image -> 415
+    assert res.status_code == 415
     assert "unsupported file type" in res.get_json()["error"].lower()
 
 def test_report_submission_success_with_photo(client, student_auth_headers, sample_image_bytes):

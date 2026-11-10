@@ -9,9 +9,10 @@ def ensure_initial_seed():
     """Auto-seeds demo accounts if running in development with an empty database."""
     with app.app_context():
         try:
+            # Only seed a completely empty database, so nothing is ever wiped
             if UserRepository.count() == 0:
                 print("Notice: Empty database detected. Running initial seed with demo accounts...")
-                seed()
+                seed(app=app, force=True)
         except Exception as e:
             print(f"Notice during initial seed check: {e}")
 

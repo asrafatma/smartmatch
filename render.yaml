@@ -1,0 +1,42 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Deploy with: Render Dashboard -> New -> Blueprint -> select this repository.
+services:
+  - type: web
+    name: smartmatch
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    # One worker keeps the in-memory rate limiter consistent; threads handle concurrency.
+    # --preload runs the one-time demo seed before forking.
+    startCommand: gunicorn wsgi:app --preload --workers 1 --threads 8 --timeout 120 --bind 0.0.0.0:$PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: FLASK_ENV
+        value: production
+      - key: FLASK_DEBUG
+        value: "0"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: MONGODB_URI
+        sync: false          # paste your Atlas connection string in the Render dashboard
+      - key: MONGODB_DB_NAME
+        value: smartmatch
+      - key: GEMINI_API_KEY
+        sync: false          # paste your Gemini API key in the Render dashboard
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_TIMEOUT_SECONDS
+        value: "25"
+      - key: ADMIN_INVITE_CODE
+        sync: false          # optional: lets staff self-register as admin
+      - key: IMAGE_STORAGE_GRIDFS
+        value: "1"
+      - key: MONGODB_ALLOW_MOCK_FALLBACK
+        value: "0"
+      - key: AUTO_SEED_DEMO_DATA
+        value: "1"

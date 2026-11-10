@@ -1,20 +1,35 @@
 # SmartMatch — Competition Submission Metadata
 
-## Project Information
-- **Project Name:** SmartMatch — AI-Powered Campus Lost & Found Platform
-- **Team Name:** SmartMatch Team
-- **Repository URL:** [https://github.com/itsas/smartmatch](https://github.com/itsas/smartmatch) <!-- Pending final push -->
-- **Live Deployment URL:** [http://127.0.0.1:5000](http://127.0.0.1:5000) <!-- Locally running & verified; cloud URL placeholder: https://smartmatch-campus.onrender.com -->
-- **Submission Timestamp:** 2026-11-10T11:51:30+05:00
-- **Final Git Commit SHA:** `1bf43e75f7049017c65e15ed93666f4f14b53eb9`
+> Fill in every `<...>` value only after it has been verified (see README → Deployment).
+> Do not submit placeholder values.
 
----
+## Project information
 
-## Evaluation Summary
-- **Core Product Principle:** AI is an assistance tool, not an authority.
-- **Multimodal AI:** Gemini multimodal API (`gemini-2.5-flash`) via official `google-genai` SDK with Pydantic schema validation and automatic rule-based manual fallback.
-- **Matching Engine:** Deterministic 100-point scoring matrix in pure Python with transparent score breakdowns and 4-tier tie-breaking.
-- **Ownership Verification:** Private claim evidence with server-side 3-attempt limit lockout.
-- **Contact Privacy:** Zero email leakage in public responses; contact details released only upon approved claim.
-- **Automated Tests:** 29 passed out of 29 (100% pass rate) spanning unit, integration, and end-to-end journeys.
-- **Judge Quick Start:** Documented in `README.md` with 1-click test access.
+| Field | Value |
+|---|---|
+| Team Name | `<TEAM_NAME>` |
+| Project Name | SmartMatch — AI-Powered Campus Lost & Found Platform |
+| Repository URL | `<https://github.com/<user>/<repo>>` |
+| Live Deployment URL | `<https://<service>.onrender.com>` (verified from a device outside the dev machine) |
+| Submission Timestamp | `<YYYY-MM-DDTHH:MM:SS+05:00>` |
+| Final Git Commit SHA | `<output of: git rev-parse HEAD after the final push>` |
+
+## Verification checklist (complete before submitting)
+
+- [ ] `<LIVE_URL>/api/health` returns `"status": "healthy"` and `"database": {"status": "healthy"}`
+- [ ] Demo login `alice@campus.edu / student123` works on the live URL
+- [ ] GitHub Actions CI run for the final commit is green
+- [ ] `git log -p | grep -iE "mongodb\+srv://[^<]|AIza"` returns nothing (no leaked secrets)
+- [ ] The SHA above equals `git rev-parse HEAD` and the GitHub repository's latest commit
+
+## Evaluation summary
+
+- **Core principle:** AI is an assistance tool, not an authority.
+- **AI:** Gemini multimodal extraction (`google-genai` SDK) → Pydantic validation → user review/edit; manual fallback
+  on any AI failure; every call logged in `ai_logs`.
+- **Matching:** deterministic 100-point scoring with fixed dictionaries, explanations and stable tie-breaks;
+  versioned configuration.
+- **Claims:** finder's private clue verified on the server, atomic 3-attempt limit (429), one claim per user per
+  item, finder approval required.
+- **Privacy:** contact details only for the finder and the approved claimant; private clues never leave the server.
+- **Tests:** `bash scripts/test.sh` (unit, integration, end-to-end, organizer acceptance tests; Gemini mocked).

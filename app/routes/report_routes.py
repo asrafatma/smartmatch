@@ -1,7 +1,9 @@
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, g
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt, verify_jwt_in_request
 from app.services.report_service import ReportService
 from app.services.contact_service import ContactService
+from app.utils.validators import parse_int
+from app.utils.rate_limit import rate_limited
 
 report_bp = Blueprint("reports", __name__)
 
@@ -21,13 +23,34 @@ def create_report():
     )
 
     if err:
-        return jsonify({"success": False, "error": err}), status_code
+        return jsonify({
+            "success": False,
+            "error": err,
+            "code": g.get("report_error_code") or "ERROR"
+        }), status_code
 
     return jsonify({
         "success": True,
         "message": "Report submitted successfully",
+        "ai_status": created.get("ai_status"),
+        "attribute_source": created.get("attribute_source"),
         "data": created
     }), 201
+
+
+@report_bp.route("/analyze", methods=["POST"])
+@jwt_required()
+@rate_limited("analyze")
+def analyze_report():
+    """Returns editable AI attribute suggestions for a photo + description. Saves nothing."""
+    payload, err, status_code, code = ReportService.analyze_preview(
+        form_data=request.form.to_dict(),
+        file_storage=request.files.get("image"),
+        upload_folder=current_app.config["UPLOAD_FOLDER"],
+    )
+    if err:
+        return jsonify({"success": False, "error": err, "code": code}), status_code
+    return jsonify({"success": True, "data": payload}), 200
 
 @report_bp.route("", methods=["GET"])
 def list_reports():
@@ -42,8 +65,8 @@ def list_reports():
     if request.args.get("user_id"):
         filters["user_id"] = request.args.get("user_id")
 
-    page = int(request.args.get("page", 1))
-    limit = int(request.args.get("limit", 20))
+    page = parse_int(request.args.get("page"), default=1, minimum=1, maximum=10000)
+    limit = parse_int(request.args.get("limit"), default=20, minimum=1, maximum=100)
 
     result = ReportService.list_reports(filters, page=page, limit=limit)
     return jsonify({

@@ -31,15 +31,17 @@ SmartMatch is a web-based, AI-assisted, privacy-preserving campus lost-and-found
 ## 3. Functional Requirements
 
 ### Must-Have Requirements (Core MVP)
-- [x] **FR-1: User Authentication & Authorization:** Secure registration and login using JWT tokens and bcrypt password hashing. Support for `student` and `admin` roles.
-- [x] **FR-2: Mandatory Photographic Evidence:** Every lost and found report submission requires a valid photograph (`.png`, `.jpg`, `.jpeg`, `.webp`, up to 10MB) verified via image decoding.
+- [x] **FR-1: User Authentication & Authorization:** Secure registration and login using JWT tokens and bcrypt password hashing. Support for `student` and `admin` roles; public registration can only create students (admin requires a server-side invite code).
+- [x] **FR-2: Mandatory Photographic Evidence:** Every lost and found report submission requires a valid photograph (`.png`, `.jpg`, `.jpeg`, `.webp`, up to 5MB) verified by decoding the image and checking its real format (400 PHOTO_REQUIRED, 413 too large, 415 wrong type).
 - [x] **FR-3: Multimodal AI Attribute Extraction:** Integration with Gemini API (`gemini-2.5-flash`) via the official `google-genai` Python SDK to extract colors, materials, shapes, brands, and distinctive features into structured JSON validated by Pydantic.
 - [x] **FR-4: Human-in-the-Loop Confirmation:** Extracted attributes are presented as editable suggestions that users can refine before saving.
 - [x] **FR-5: Graceful Manual Fallback:** If Gemini is unreachable, times out, or no API key is configured, the system automatically engages rule-based heuristic extraction and allows manual attribute confirmation without halting submission.
 - [x] **FR-6: Attribute Normalization:** Canonical dictionary-based normalization for colors, materials, shapes, object types, and categories.
 - [x] **FR-7: Deterministic 100-Point Matching Engine:** A Python matching algorithm scoring Category (20), Object Type (15), Brand (15), Color (15), Material/Shape (10), Features (15), Location (5), and Date (5).
 - [x] **FR-8: Match Explanations & Transparency:** Detailed score breakdowns, matched attribute lists, conflicting attribute lists, and unknown attribute lists.
-- [x] **FR-9: Private Ownership Claims Workflow:** Claimants submit private verification details against found items. Server-side attempt limits (maximum 3 attempts) prevent brute-force claiming.
+- [x] **FR-9: Private Ownership Claims Workflow:** Finders set a private clue; claimant answers are verified on the server. Atomic attempt limit (3, then locked with HTTP 429), one claim per user per item, and finder approval of verified claims only.
+- [x] **FR-9a: AI Suggestion Review:** `POST /api/reports/analyze` returns editable AI suggestions; users confirm or edit them before the report is saved.
+- [x] **FR-9b: Contact Disclosure:** contact details only for the finder and the approved claimant (no admin bypass).
 - [x] **FR-10: Contact Privacy Enforcement:** Submitter contact emails are masked in public endpoints (`[PROTECTED]`) and only authorized for direct handover upon approved claim verification.
 - [x] **FR-11: Report Lifecycle Management:** Support for report statuses (`active`, `claim_pending`, `under_review`, `resolved`, `inactive`, `closed`). Resolved/closed items are automatically excluded from match rankings.
 

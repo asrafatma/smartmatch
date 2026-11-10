@@ -58,10 +58,14 @@ def test_claim_attempt_limits_and_lock(client, student_auth_headers, found_repor
     assert res2.status_code == 200
     assert res2.get_json()["data"]["attempt_count"] == 2
     
-    # Attempt 3 -> locks
+    # Attempt 3 -> locks (spec 7.3: claim attempt limit -> 429)
     res3 = client.post("/api/claims", json={"report_id": rep_id, "verification_answers": "Attempt 3 details here"}, headers=student_auth_headers)
-    assert res3.status_code == 403
-    assert "limit reached" in res3.get_json()["error"].lower()
+    assert res3.status_code == 429
+    assert "locked" in res3.get_json()["error"].lower()
+
+    # Further attempts stay locked
+    res4 = client.post("/api/claims", json={"report_id": rep_id, "verification_answers": "Attempt 4 details here"}, headers=student_auth_headers)
+    assert res4.status_code == 429
 
 def test_claim_review_and_contact_privacy_authorization(
     client,
@@ -112,6 +116,6 @@ def test_claim_review_and_contact_privacy_authorization(
     assert contact_data["finder"]["email"] == "bob@test.edu"
     assert contact_data["claimant"]["email"] == "alice@test.edu"
 
-    # 7. Contact info is also accessible by Admin
+    # 7. Design report 9.2: no admin bypass for contact disclosure
     admin_contact = client.get(f"/api/reports/{rep_id}/contact", headers=admin_auth_headers)
-    assert admin_contact.status_code == 200
+    assert admin_contact.status_code == 403

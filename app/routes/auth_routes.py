@@ -1,10 +1,12 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from app.services.auth_service import AuthService
+from app.utils.rate_limit import rate_limited
 
 auth_bp = Blueprint("auth", __name__)
 
 @auth_bp.route("/register", methods=["POST"])
+@rate_limited("register")
 def register():
     data = request.get_json(silent=True) or {}
     result, err = AuthService.register(data)
@@ -17,6 +19,7 @@ def register():
     }), 201
 
 @auth_bp.route("/login", methods=["POST"])
+@rate_limited("login")
 def login():
     data = request.get_json(silent=True) or {}
     result, err = AuthService.login(data)

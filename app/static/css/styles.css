@@ -1014,3 +1014,9 @@ input:focus, select:focus, textarea:focus {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* Status variants used by the claim/verification UI */
+.badge-warning { background: var(--warning-light); color: #b45309; }
+.badge-info { background: #eff6ff; color: #1d4ed8; }
+.badge-danger { background: #fef2f2; color: #b91c1c; }
+.alert-warning { background: var(--warning-light); color: #92400e; border: 1px solid #fde68a; }

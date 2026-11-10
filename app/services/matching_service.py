@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from typing import List, Dict, Any, Tuple
 from app.ai.normalizer import Normalizer
@@ -5,10 +6,33 @@ from app.config import Config
 from app.repositories.report_repository import ReportRepository
 from app.repositories.match_repository import MatchRepository
 
+def _text(value) -> str:
+    """Defensive coercion: stored fields may be missing, None, or non-string."""
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple)):
+        return " ".join(str(v) for v in value)
+    return str(value)
+
+
 class MatchingEngine:
+    # Report statuses that can appear as match candidates. Found items with a pending claim
+    # stay visible so the true owner can still find them and submit their own claim.
+    CANDIDATE_STATUSES = ("active", "claim_pending")
+    DISTINCTIVE_TERMS = [
+        "sticker", "scratched", "scratch", "broken", "engraved", "engraving", "keychain",
+        "tag", "stitched", "zipper", "strap", "case", "cover", "charm"
+    ]
+
     ALGORITHM_VERSION = Config.ALGORITHM_VERSION
     CONFIG_VERSION = Config.CONFIG_VERSION
     WEIGHTS = Config.MATCHING_WEIGHTS
+    COLOR_FAMILIES = Config.COLOR_FAMILIES
+    COMPATIBLE_OBJECT_TYPES = Config.COMPATIBLE_OBJECT_TYPES
+
+    @classmethod
+    def _compatible_types(cls, a: str, b: str) -> bool:
+        return any(a in group and b in group for group in cls.COMPATIBLE_OBJECT_TYPES)
 
     @classmethod
     def compare_reports(cls, base_report: Dict[str, Any], candidate_report: Dict[str, Any]) -> Dict[str, Any]:
@@ -41,16 +65,25 @@ class MatchingEngine:
 
         # 2. Object Type (Weight: 15)
         max_obj = cls.WEIGHTS["object_type"]
-        base_obj = norm_base.get("object_type", "")
-        cand_obj = norm_cand.get("object_type", "")
+        base_obj = _text(norm_base.get("object_type"))
+        cand_obj = _text(norm_cand.get("object_type"))
+        generic = ("", "item")
+        # Token overlap instead of raw substring ('' in 'x' is always True; 'cup' in 'cupboard')
+        base_tokens = set(base_obj.split("_")) - {""}
+        cand_tokens = set(cand_obj.split("_")) - {""}
 
-        if base_obj and cand_obj and base_obj == cand_obj:
+        if base_obj and cand_obj and base_obj == cand_obj and base_obj not in generic:
             score_breakdown["object_type"] = max_obj
             matched_attributes.append(f"Matching object type: {base_obj.replace('_', ' ').title()}")
-        elif base_obj in cand_obj or cand_obj in base_obj:
+        elif cls._compatible_types(base_obj, cand_obj):
+            score_breakdown["object_type"] = max_obj * 0.8
+            matched_attributes.append(
+                f"Compatible object types: {base_obj.replace('_', ' ')} ~ {cand_obj.replace('_', ' ')}"
+            )
+        elif base_obj not in generic and cand_obj not in generic and base_tokens & cand_tokens:
             score_breakdown["object_type"] = max_obj * 0.7
             matched_attributes.append(f"Partially matching object type ({base_obj} ~ {cand_obj})")
-        elif not base_obj or not cand_obj or base_obj == "item" or cand_obj == "item":
+        elif base_obj in generic or cand_obj in generic:
             score_breakdown["object_type"] = max_obj * 0.35
             unknowns.append("Specific object type could not be strictly determined")
         else:
@@ -69,7 +102,7 @@ class MatchingEngine:
                 matched_attributes.append(f"Matching brand/logo: {', '.join(sorted(shared_brands))}")
             else:
                 score_breakdown["brand_or_logo"] = 0.0
-                conflicts.append(f"Distinct brands recorded ({', '.join(b_brands)} vs {', '.join(c_brands)})")
+                conflicts.append(f"Distinct brands recorded ({', '.join(sorted(b_brands))} vs {', '.join(sorted(c_brands))})")
         elif not b_brands and not c_brands:
             score_breakdown["brand_or_logo"] = max_brand * 0.5
             unknowns.append("No brand or logo visible or stated on either report")
@@ -89,12 +122,21 @@ class MatchingEngine:
 
         if b_colors and c_colors:
             shared_colors = b_colors.intersection(c_colors)
+            b_fam = {cls.COLOR_FAMILIES.get(c, c) for c in b_colors}
+            c_fam = {cls.COLOR_FAMILIES.get(c, c) for c in c_colors}
+            shared_families = b_fam & c_fam
             if shared_colors:
                 score_breakdown["color"] = max_color
                 matched_attributes.append(f"Matching color(s): {', '.join(sorted(shared_colors))}")
+            elif shared_families:
+                score_breakdown["color"] = max_color * 0.7
+                matched_attributes.append(
+                    f"Same colour family ({', '.join(sorted(shared_families))}): "
+                    f"{', '.join(sorted(b_colors))} ~ {', '.join(sorted(c_colors))}"
+                )
             else:
                 score_breakdown["color"] = 0.0
-                conflicts.append(f"Different color descriptions ({', '.join(b_colors)} vs {', '.join(c_colors)})")
+                conflicts.append(f"Different color descriptions ({', '.join(sorted(b_colors))} vs {', '.join(sorted(c_colors))})")
         elif not b_colors and not c_colors:
             score_breakdown["color"] = max_color * 0.5
             unknowns.append("Color is unknown on both reports")
@@ -113,10 +155,10 @@ class MatchingEngine:
         if b_mat and c_mat:
             if b_mat.intersection(c_mat):
                 mat_pts = half_ms
-                matched_attributes.append(f"Matching material: {', '.join(b_mat.intersection(c_mat))}")
+                matched_attributes.append(f"Matching material: {', '.join(sorted(b_mat.intersection(c_mat)))}")
             else:
                 mat_pts = 0.0
-                conflicts.append(f"Material difference ({', '.join(b_mat)} vs {', '.join(c_mat)})")
+                conflicts.append(f"Material difference ({', '.join(sorted(b_mat))} vs {', '.join(sorted(c_mat))})")
         else:
             mat_pts = half_ms * 0.5
             unknowns.append("Material not specified on one or both reports")
@@ -126,10 +168,10 @@ class MatchingEngine:
         if b_shape and c_shape:
             if b_shape.intersection(c_shape):
                 shape_pts = half_ms
-                matched_attributes.append(f"Matching shape: {', '.join(b_shape.intersection(c_shape))}")
+                matched_attributes.append(f"Matching shape: {', '.join(sorted(b_shape.intersection(c_shape)))}")
             else:
                 shape_pts = 0.0
-                conflicts.append(f"Shape difference ({', '.join(b_shape)} vs {', '.join(c_shape)})")
+                conflicts.append(f"Shape difference ({', '.join(sorted(b_shape))} vs {', '.join(sorted(c_shape))})")
         else:
             shape_pts = half_ms * 0.5
             unknowns.append("Shape not specified on one or both reports")
@@ -138,15 +180,16 @@ class MatchingEngine:
 
         # 6. Distinctive Features (Weight: 15)
         max_feat = cls.WEIGHTS["distinctive_features"]
-        b_feat = [f.lower() for f in norm_base.get("attributes", {}).get("distinctive_features", [])]
-        c_feat = [f.lower() for f in norm_cand.get("attributes", {}).get("distinctive_features", [])]
+        b_feat = [_text(f).lower() for f in norm_base.get("attributes", {}).get("distinctive_features", [])]
+        c_feat = [_text(f).lower() for f in norm_cand.get("attributes", {}).get("distinctive_features", [])]
 
-        b_text = " ".join(b_feat) + " " + norm_base.get("description", "").lower()
-        c_text = " ".join(c_feat) + " " + norm_cand.get("description", "").lower()
+        b_text = " ".join(b_feat) + " " + _text(norm_base.get("description")).lower()
+        c_text = " ".join(c_feat) + " " + _text(norm_cand.get("description")).lower()
 
-        # Check keyword overlaps in features
-        key_terms = ["sticker", "scratched", "scratch", "broken", "engraved", "engraving", "keychain", "tag", "stitched", "zipper", "strap", "case", "cover", "charm"]
-        shared_terms = [t for t in key_terms if (t in b_text and t in c_text)]
+        # Whole-word keyword overlap ('case' must not match 'briefcase', 'tag' not 'vintage')
+        def has_term(term, text):
+            return re.search(r"\b" + re.escape(term) + r"s?\b", text) is not None
+        shared_terms = [t for t in cls.DISTINCTIVE_TERMS if has_term(t, b_text) and has_term(t, c_text)]
 
         if shared_terms:
             score_breakdown["distinctive_features"] = max_feat
@@ -160,8 +203,8 @@ class MatchingEngine:
 
         # 7. Location Proximity (Weight: 5)
         max_loc = cls.WEIGHTS["location"]
-        b_loc = norm_base.get("location", "").strip().lower()
-        c_loc = norm_cand.get("location", "").strip().lower()
+        b_loc = _text(norm_base.get("location")).strip().lower()
+        c_loc = _text(norm_cand.get("location")).strip().lower()
 
         if b_loc and c_loc and (b_loc == c_loc):
             score_breakdown["location"] = float(max_loc)
@@ -245,6 +288,15 @@ class MatchingEngine:
         s = str(val)[:10]
         return datetime.strptime(s, "%Y-%m-%d")
 
+    @staticmethod
+    def _public_candidate(cand: dict) -> dict:
+        """Fields of a candidate report safe to show the other party."""
+        keys = (
+            "id", "user_id", "report_type", "title", "description", "category", "object_type",
+            "location", "incident_date", "image_path", "attributes", "status", "created_at",
+        )
+        return {k: cand.get(k) for k in keys if k in cand}
+
     @classmethod
     def find_matches_for_report(cls, report_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         """
@@ -262,13 +314,17 @@ class MatchingEngine:
         base_type = base_report.get("report_type")
         target_type = "found" if base_type == "lost" else "lost"
 
-        # Fetch candidate active reports
-        candidates = ReportRepository.find_active_by_type(target_type)
+        # Fetch candidate open reports
+        candidates = ReportRepository.find_active_by_type(target_type, statuses=cls.CANDIDATE_STATUSES)
 
+        report_id = base_report["id"]
         results = []
         for cand in candidates:
             cand_id = cand["id"]
             if cand_id == report_id:
+                continue
+            # Never match a user's own lost report against their own found report
+            if str(cand.get("user_id")) == str(base_report.get("user_id")):
                 continue
 
             match_data = cls.compare_reports(base_report, cand)
@@ -288,12 +344,12 @@ class MatchingEngine:
                 "unknowns": match_data["unknowns"],
                 "algorithm_version": match_data["algorithm_version"],
                 "config_version": match_data["config_version"],
-                "candidate_report": cand
             }
-            
-            # Save or update in matches repository
+
+            # Persist only the score record; the candidate report is referenced by id, not
+            # copied, so stale/private snapshots never accumulate in the matches collection.
             MatchRepository.save_match(record)
-            results.append(record)
+            results.append({**record, "candidate_report": cls._public_candidate(cand)})
 
         # Deterministic Tie-breaking:
         # 1. Score descending

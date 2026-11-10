@@ -87,3 +87,35 @@ This document records the AI tools, models, prompts, code generation decisions, 
   - Score gauge dials and color-coded tag pills for matched attributes (green), conflicts (red), and unknowns (gray).
 - **Verification Method:** Tested live in browser; verified interactive forms, file uploads, claim approvals, and contact information reveals.
 - **Outcome:** Intuitive, fast, highly polished UI suitable for competition demonstration.
+
+
+---
+
+## Entry 6: Full-Project Bug Audit, Spec Alignment & Deployment Preparation
+- **Date:** 2026-11-10
+- **AI Tool:** Claude Code (Claude Opus 5.5) in VS Code
+- **Prompts (user):** "check this whole project for any sort of bugs and errors and check which database is integrated
+  and how and also check for ai integration"; "correct all the bugs and everything required"; "check if the current
+  project aligns with the prompts and project description … do everything required on your part … so we can deploy it"
+  (with the Design Report v2.0 PDF and the Master Build Prompt attached).
+- **Purpose:** Audit for defects, fix them, close gaps against the design report, prepare the deployment.
+- **Accepted (after review and tests):**
+  - Security fixes: admin self-registration via `role` field removed (invite code instead); `/api/matches` now
+    requires owner/admin JWT; regex-escaped search; strict upload serving; no admin bypass for contact details.
+  - Robustness fixes: 500 errors on null/non-string JSON fields and non-numeric query params; relative
+    `UPLOAD_FOLDER` broke image serving; silent in-memory DB fallback in production; non-atomic claim reviews;
+    claims re-opening resolved items; competing claims approvable.
+  - AI fixes: `GEMINI_MODEL` env var was ignored; `ai_logs.report_id` always null; added request timeout,
+    `system_instruction`, MIME detection from bytes, empty-response handling.
+  - Spec gaps: AI suggestion review step (`/api/reports/analyze`), private-clue claim verification with atomic attempt
+    limit and 429, 413/415/`PHOTO_REQUIRED` codes, date-range validation, rate limiting, wallet/card-holder and
+    colour-family compatibility, deterministic (sorted) explanations, GridFS image persistence, Render config.
+- **Rejected / modified:** A first version that treated backpack and duffel bag as compatible types was removed
+  because it pushed a known non-match over the "Possible match" threshold (caught by an existing unit test).
+- **Verification:** `bash scripts/test.sh` → 77 tests passed locally (Python 3.14, Windows). Manual browser run of
+  analyze → edit → submit → match → wrong/right claim answer → contact 403 before approval on a local server
+  (in-memory DB). Live Atlas connection and live Gemini calls were **not** verified in this session (credentials not
+  yet configured); the deployment has not been performed yet.
+- **Reflection:** Several defects were invisible to the original 29 tests because the tests encoded the buggy behaviour
+  (e.g. admin contact access, unauthenticated matches). Acceptance tests are now written from the design report rather
+  than from the implementation.

@@ -41,8 +41,8 @@ python -m pytest tests/e2e/ -v
 | **Unit** | `tests/unit/test_matching_engine.py` | Weight matrix sum = 100, obvious pair high score ($\ge 85$), conflicting attributes low score ($< 40$), neutral unknown handling, known pair ranking above distractor. | 5/5 PASSED |
 | **Unit** | `tests/unit/test_gemini_fallback.py` | Heuristic fallback keyword extraction, Pydantic `ItemExtractionResult` validation, graceful handling of missing Gemini API key with zero crashes. | 2/2 PASSED |
 | **Integration** | `tests/integration/test_auth_routes.py` | Registration (201), duplicate email rejection (400), short password rejection (400), login success (200), invalid credentials (401), JWT protected `/me` endpoint. | 6/6 PASSED |
-| **Integration** | `tests/integration/test_report_routes.py` | Mandatory photo requirement (400 if missing), invalid file type rejection (400), successful report creation with photo (201), private contact masking in public responses, unauthorized update rejection (403). | 5/5 PASSED |
-| **Integration** | `tests/integration/test_claim_and_privacy.py` | Claim submission against found item (201), self-claim prohibition (400), 3-attempt limit lockout (403), unauthorized review rejection (403), finder claim approval, report status transition to resolved, authorized contact release. | 4/4 PASSED |
+| **Integration** | `tests/integration/test_report_routes.py` | Mandatory photo requirement (400 if missing), invalid file type rejection (415), successful report creation with photo (201), private contact masking in public responses, unauthorized update rejection (403). | 5/5 PASSED |
+| **Integration** | `tests/integration/test_claim_and_privacy.py` | Claim submission against found item (201), self-claim prohibition (400), 3-attempt limit lockout (429), unauthorized review rejection (403), finder claim approval, report status transition to resolved, authorized contact release. | 4/4 PASSED |
 | **End-to-End** | `tests/e2e/test_user_journeys.py` | Complete lifecycle: Alice files lost wallet $\to$ Bob files found wallet $\to$ deterministic matching ranks pair #1 ($97.0$) $\to$ Alice claims $\to$ Bob approves $\to$ contact released. Exclusion of resolved reports from matching catalog. | 2/2 PASSED |
 | **Total** | | **29 Automated Tests** | **29/29 PASSED** |
 
@@ -69,7 +69,7 @@ python -m pytest tests/e2e/ -v
 
 ### 5. Server-Side Claim Attempt Limits
 - **Requirement:** Prevent brute-force claiming by locking claims after 3 failed/repeated attempts.
-- **Verification:** `tests/integration/test_claim_and_privacy.py::test_claim_attempt_limits_and_lock` attempts 3 successive submissions. The 3rd attempt returns HTTP 403 with `status = locked`.
+- **Verification:** `tests/integration/test_claim_and_privacy.py::test_claim_attempt_limits_and_lock` attempts 3 successive submissions. The 3rd attempt returns HTTP 429 with `status = locked`; further attempts stay locked.
 
 ---
 
@@ -85,3 +85,39 @@ python -m pytest tests/e2e/ -v
 7. Click **Claims Review** in the navigation bar:
    - Notice the pending claim on the **Honda Car Keys** submitted by Alice.
    - Click **✓ Approve Ownership** $\to$ verify status updates to approved and report resolves.
+
+
+## 6. Organizer Acceptance Tests (Design Report §12.1)
+
+`tests/integration/test_spec_acceptance.py` maps one test to each mandated check:
+
+| Mandated test | Test function |
+|---|---|
+| AI failure fallback | `test_ai_failure_fallback_report_still_posts_and_matches` (Gemini forced to time out) |
+| AI suggestions reviewed before save | `test_analyze_returns_editable_suggestions_without_saving`, `test_confirmed_attributes_are_saved_and_analysis_linked` |
+| Known match ranking + determinism | `test_known_match_ranks_first_and_is_deterministic` (seed dataset, two runs compared) |
+| Vocabulary compatibility | `test_wallet_card_holder_and_colour_family_compatibility` |
+| Contact: outsider / unapproved / finder / approved | `test_contact_access_matrix` |
+| Claim verification + lock | `test_wrong_answers_increment_and_lock`, `test_correct_answer_verified_then_finder_approves` |
+| Attempt bypass | `test_wrong_answers_increment_and_lock` (correct answer refused after lock), unique claim index |
+| Failed claims hidden from finder | `test_failed_claims_hidden_from_finder_and_not_approvable` |
+| No photo / huge / invalid image | `test_no_photo_returns_photo_required_and_creates_nothing`, `test_huge_image_returns_413`, `test_renamed_text_file_returns_415`, `test_wrong_real_format_returns_415` |
+| Empty fields / bad dates | `test_empty_fields_return_400`, `test_future_and_implausible_dates_rejected` |
+| Resolved item excluded | `test_resolved_item_absent_from_search_and_matching` |
+| No self/same-type match | `test_no_self_match_or_same_type_or_own_reports` |
+| Private clue never leaks | `test_private_clue_never_leaks` |
+| Pending claim ≠ resolved | `test_pending_claim_does_not_resolve_item` |
+| Only finder decides | `test_only_finder_or_admin_decides` |
+| Duplicate email, hashed passwords | `test_duplicate_email_rejected_and_password_hashed` |
+| Rate limiting | `test_login_rate_limited` |
+
+`tests/integration/test_bug_regressions.py` covers the audit fixes (admin self-registration, unauthenticated
+matches, crashes on malformed input, regex injection, image serving path, claim state transitions, Gemini
+model configuration, AI log linking).
+
+### Deployment tests (manual, after each deploy)
+
+1. `curl <LIVE_URL>/api/health` → `status: healthy`, database `healthy`, `ai_engine.multimodal_enabled: true`.
+2. Open `<LIVE_URL>` on a phone using mobile data (outside the dev network) and log in as Alice.
+3. Submit a report with a photo; restart the Render service; confirm the photo still loads (GridFS).
+4. Run the 5-minute judge walkthrough from README.md end to end.

@@ -59,7 +59,7 @@ class ReportAnalyzer:
 
         result = ItemExtractionResult(
             object_type=normalized_obj.replace("_", " "),
-            category=category or "other",
+            category=Normalizer.normalize_category(category or "other"),
             attributes=attrs,
             user_stated_details=user_details,
             visually_observed_details=["Manual entry mode: image not processed by AI"],
@@ -69,23 +69,30 @@ class ReportAnalyzer:
         return result.model_dump()
 
     @classmethod
-    def analyze(
+    def analyze(cls, title: str, description: str, category: str, image_path: str,
+                report_id: str = None) -> tuple[dict, str, str | None]:
+        """Analyzes report with Gemini. Returns (extracted_attributes_dict, ai_status, error_type)."""
+        result, status, error, _log_id = cls.analyze_with_log(title, description, category, image_path, report_id)
+        return result, status, error
+
+    @classmethod
+    def analyze_with_log(
         cls,
         title: str,
         description: str,
         category: str,
         image_path: str,
         report_id: str = None
-    ) -> tuple[dict, str, str | None]:
+    ) -> tuple[dict, str, str | None, str | None]:
         """
-        Analyzes report with Gemini. Returns (extracted_attributes_dict, ai_status, error_type).
-        Guarantees fallback when AI is unavailable.
+        Same as analyze() but also returns the ai_logs entry id so a later report submission
+        can be linked to the analysis. Guarantees fallback when AI is unavailable.
         """
         gemini = GeminiClient()
         if not gemini.api_key:
             logger.info("GEMINI_API_KEY not configured. Using rule-based fallback attributes.")
             fallback = cls.fallback_extract(title, description, category)
-            AILogRepository.log(
+            log = AILogRepository.log(
                 report_id=report_id,
                 model_name="none",
                 prompt_version="v1",
@@ -93,14 +100,14 @@ class ReportAnalyzer:
                 status="manual",
                 error_type="API_KEY_NOT_CONFIGURED"
             )
-            return fallback, "manual", "API_KEY_NOT_CONFIGURED"
+            return fallback, "manual", "API_KEY_NOT_CONFIGURED", log["id"]
 
         try:
             result = gemini.extract_item_attributes(
                 description=f"Title: {title}. Description: {description}",
                 image_path=image_path
             )
-            AILogRepository.log(
+            log = AILogRepository.log(
                 report_id=report_id,
                 model_name=gemini.model_name,
                 prompt_version="v1",
@@ -108,12 +115,13 @@ class ReportAnalyzer:
                 status="completed",
                 error_type=None
             )
-            return result, "completed", None
+            return result, "completed", None, log["id"]
         except Exception as e:
             logger.warning("Gemini extraction failed (%s). Engaging manual fallback.", e)
             fallback = cls.fallback_extract(title, description, category)
-            fallback["unknowns"].append(f"AI extraction encountered: {str(e)[:80]}")
-            AILogRepository.log(
+            # Do not expose raw provider error text to end users; it is logged above and in ai_logs
+            fallback["unknowns"].append("AI image analysis failed; attributes were derived from your text only")
+            log = AILogRepository.log(
                 report_id=report_id,
                 model_name=gemini.model_name or "unknown",
                 prompt_version="v1",
@@ -121,4 +129,4 @@ class ReportAnalyzer:
                 status="failed",
                 error_type=type(e).__name__
             )
-            return fallback, "failed", type(e).__name__
+            return fallback, "failed", type(e).__name__, log["id"]

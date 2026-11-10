@@ -1,19 +1,20 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from app.services.claim_service import ClaimService
-from app.repositories.claim_repository import ClaimRepository
+from app.utils.rate_limit import rate_limited
 
 claim_bp = Blueprint("claims", __name__)
 
 @claim_bp.route("", methods=["POST"])
 @jwt_required()
+@rate_limited("claim")
 def submit_claim():
     claimant_id = get_jwt_identity()
     data = request.get_json(silent=True) or {}
     report_id = data.get("report_id")
     answers = data.get("verification_answers", "")
 
-    if not report_id:
+    if not report_id or not isinstance(report_id, str):
         return jsonify({"success": False, "error": "report_id is required"}), 400
 
     claim, err, status_code = ClaimService.submit_claim(
@@ -44,7 +45,7 @@ def list_claims():
         claims = ClaimService.list_pending_for_reviewer(user_id, user_role)
     else:
         # Returns claims this user submitted
-        claims = ClaimRepository.list_by_claimant(user_id)
+        claims = ClaimService.list_for_claimant(user_id)
 
     return jsonify({
         "success": True,
@@ -95,6 +96,6 @@ def review_claim(claim_id):
 
     return jsonify({
         "success": True,
-        "message": f"Claim {action} successfully",
+        "message": f"Claim {reviewed['status']} successfully",
         "data": reviewed
     }), 200

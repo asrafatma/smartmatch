@@ -10,9 +10,11 @@ from app import create_app
 from app.repositories.user_repository import UserRepository
 from app.repositories.report_repository import ReportRepository
 from app.repositories.claim_repository import ClaimRepository
-from app.repositories.db import get_db
+from app.repositories.db import get_db, Database
 from app.utils.security import hash_password
 from app.services.matching_service import MatchingEngine
+from app.repositories.verification_repository import VerificationRepository
+from app.utils.file_handler import persist_image_file
 
 def create_synthetic_image(dest_path: str, bg_color: tuple, text: str):
     os.makedirs(os.path.dirname(dest_path), exist_ok=True)
@@ -22,11 +24,24 @@ def create_synthetic_image(dest_path: str, bg_color: tuple, text: str):
     draw.rectangle([10, 10, 390, 290], outline=(255, 255, 255), width=3)
     # Simple label text
     draw.text((25, 130), text, fill=(255, 255, 255))
-    img.save(dest_path)
+    img.save(dest_path, format="JPEG")
+    # Mirror to persistent storage (GridFS) when connected to a real MongoDB
+    persist_image_file(dest_path, os.path.basename(dest_path))
 
-def seed():
-    app = create_app()
+def seed(app=None, force: bool = False):
+    """
+    Wipes and re-populates the database with demo data.
+    Pass an existing app to reuse its DB connection (re-creating the app would re-initialise
+    the global connection). Against a real MongoDB this requires force=True / --force,
+    because every collection is cleared first.
+    """
+    if app is None:
+        app = create_app()
     with app.app_context():
+        if not Database.is_mock() and not force:
+            print("Refusing to seed: this would DELETE all data in the connected MongoDB database.")
+            print("Re-run with --force if you really want to wipe and re-seed it.")
+            return False
         db = get_db()
         print("Clearing existing collections for fresh seed...")
         db.users.delete_many({})
@@ -34,6 +49,7 @@ def seed():
         db.matches.delete_many({})
         db.claims.delete_many({})
         db.ai_logs.delete_many({})
+        db.verification_clues.delete_many({})
 
         upload_dir = app.config.get("UPLOAD_FOLDER", "uploads")
         os.makedirs(upload_dir, exist_ok=True)
@@ -105,6 +121,7 @@ def seed():
             "image_quality": "high",
             "ai_status": "completed",
             "extraction_version": "1.0.0",
+            "is_demo": True,
             "status": "active"
         })
 
@@ -131,6 +148,7 @@ def seed():
             "image_quality": "high",
             "ai_status": "completed",
             "extraction_version": "1.0.0",
+            "is_demo": True,
             "status": "active"
         })
 
@@ -158,6 +176,7 @@ def seed():
             "image_quality": "adequate",
             "ai_status": "completed",
             "extraction_version": "1.0.0",
+            "is_demo": True,
             "status": "active"
         })
 
@@ -184,6 +203,7 @@ def seed():
             "image_quality": "adequate",
             "ai_status": "completed",
             "extraction_version": "1.0.0",
+            "is_demo": True,
             "status": "active"
         })
 
@@ -211,6 +231,7 @@ def seed():
             "image_quality": "adequate",
             "ai_status": "completed",
             "extraction_version": "1.0.0",
+            "is_demo": True,
             "status": "active"
         })
 
@@ -237,6 +258,7 @@ def seed():
             "image_quality": "adequate",
             "ai_status": "completed",
             "extraction_version": "1.0.0",
+            "is_demo": True,
             "status": "active"
         })
 
@@ -264,6 +286,7 @@ def seed():
             "image_quality": "adequate",
             "ai_status": "manual",
             "extraction_version": "1.0.0",
+            "is_demo": True,
             "status": "active"
         })
 
@@ -291,14 +314,21 @@ def seed():
             "image_quality": "high",
             "ai_status": "completed",
             "extraction_version": "1.0.0",
+            "is_demo": True,
             "status": "claim_pending"
         })
 
-        # Seed sample pending claim on Keys by Alice
+        # Private ownership clues (kept in a separate protected collection, never shown publicly)
+        VerificationRepository.set_clue(rep_found_wallet["id"], "metro pass behind the student card")
+        VerificationRepository.set_clue(rep_found_bottle["id"], "mountain sticker on the lid")
+        VerificationRepository.set_clue(rep_found_keys["id"], "bronze gym tag and key engraved with letter A")
+
+        # Seed sample verified, pending claim on Keys by Alice (awaiting Bob's decision)
         ClaimRepository.create(
             report_id=rep_found_keys["id"],
             claimant_id=alice["id"],
-            verification_answers="There is a small circular bronze gym scan tag attached underneath the Honda fob, and the brass house key has the initial 'A' engraved."
+            verification_answers="There is a small circular bronze gym scan tag attached underneath the Honda fob, and the brass house key has the letter A engraved.",
+            verification_status="verified"
         )
 
         print("Executing deterministic matching engine across synthetic seed reports...")
@@ -320,7 +350,10 @@ def seed():
         print("  1. Student: alice@campus.edu  / student123")
         print("  2. Finder:  bob@campus.edu    / finder123")
         print("  3. Admin:   admin@campus.edu  / admin123")
+        print("Private claim clues (for demo): wallet='metro pass behind the student card',")
+        print("  bottle='mountain sticker on the lid'")
         print("==========================================")
+        return True
 
 if __name__ == "__main__":
-    seed()
+    seed(force="--force" in sys.argv)

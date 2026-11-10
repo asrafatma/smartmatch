@@ -3,10 +3,19 @@
  * Modular Vanilla JavaScript Architecture
  */
 
+function safeStorageGet(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+
+function safeParseJson(value) {
+  try { return value ? JSON.parse(value) : null; } catch (e) { return null; }
+}
+
 // Application State
 const state = {
-  token: localStorage.getItem("smartmatch_token") || null,
-  user: JSON.parse(localStorage.getItem("smartmatch_user") || "null"),
+  token: safeStorageGet("smartmatch_token"),
+  user: safeParseJson(safeStorageGet("smartmatch_user")),
+  selectedReport: null,
   currentView: "landing",
   selectedReportId: null,
   reports: [],
@@ -177,13 +186,21 @@ async function handleRegisterSubmit(e) {
   const name = document.getElementById("reg-name").value.trim();
   const email = document.getElementById("reg-email").value.trim();
   const password = document.getElementById("reg-password").value;
-  const role = document.getElementById("reg-role").value;
+  const confirmEl = document.getElementById("reg-password-confirm");
+  if (confirmEl && confirmEl.value !== password) {
+    showToast("Passwords do not match", "error");
+    return;
+  }
+  const adminCodeEl = document.getElementById("reg-admin-code");
+  const adminCode = adminCodeEl ? adminCodeEl.value.trim() : "";
+  const payload = { name, email, password };
+  if (adminCode) payload.admin_code = adminCode;
 
   try {
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password, role })
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (!res.ok) {
@@ -286,14 +303,17 @@ function setFormReportType(type) {
   const btnFound = document.getElementById("btn-toggle-found");
   const title = document.getElementById("submit-form-title");
 
+  const clueGroup = document.getElementById("clue-group");
   if (type === "lost") {
     btnLost.classList.add("active");
     btnFound.classList.remove("active");
     title.textContent = "Submit Lost Item Report";
+    if (clueGroup) clueGroup.classList.add("hidden");
   } else {
     btnFound.classList.add("active");
     btnLost.classList.remove("active");
     title.textContent = "Submit Found Item Report";
+    if (clueGroup) clueGroup.classList.remove("hidden");
   }
 }
 
@@ -312,11 +332,115 @@ function previewUploadImage(input) {
 
 function removeUploadImage(e) {
   e.stopPropagation();
+  currentAnalysis = null;
   const input = document.getElementById("form-image-input");
   input.value = "";
   document.getElementById("preview-img").src = "";
   document.getElementById("dropzone-preview").classList.add("hidden");
   document.getElementById("dropzone-placeholder").classList.remove("hidden");
+}
+
+// Last AI analysis for the current form (reset when the form is reset)
+let currentAnalysis = null;
+
+function splitList(id) {
+  const el = document.getElementById(id);
+  return el ? el.value.split(",").map(s => s.trim()).filter(Boolean) : [];
+}
+
+function setAttrField(id, values) {
+  const el = document.getElementById(id);
+  if (el) el.value = Array.isArray(values)
+    ? values.map(v => String(v).replace(/_/g, " ")).join(", ")
+    : String(values || "").replace(/_/g, " ");
+}
+
+function setAiBadge(text, cls) {
+  const badge = document.getElementById("ai-status-badge");
+  if (!badge) return;
+  badge.textContent = text;
+  badge.className = `badge ${cls}`;
+}
+
+function buildReportFormData(includeImage = true) {
+  const formData = new FormData();
+  formData.append("report_type", document.getElementById("form-report-type").value);
+  formData.append("title", document.getElementById("form-title").value.trim());
+  formData.append("category", document.getElementById("form-category").value);
+  formData.append("incident_date", document.getElementById("form-date").value);
+  formData.append("location", document.getElementById("form-location").value.trim());
+  formData.append("description", document.getElementById("form-description").value.trim());
+  const imageInput = document.getElementById("form-image-input");
+  if (includeImage && imageInput.files && imageInput.files[0]) {
+    formData.append("image", imageInput.files[0]);
+  }
+  return formData;
+}
+
+async function analyzeReport() {
+  if (!state.token) {
+    showToast("Please sign in first", "info");
+    openAuthModal("login");
+    return;
+  }
+  const imageInput = document.getElementById("form-image-input");
+  if (!imageInput.files || !imageInput.files[0]) {
+    showToast("Add a photograph first. It is required for every report.", "error");
+    return;
+  }
+  const btn = document.getElementById("btn-analyze");
+  const spinner = document.getElementById("analyze-spinner");
+  const text = document.getElementById("analyze-btn-text");
+  btn.disabled = true;
+  spinner.classList.remove("hidden");
+  text.textContent = "Analyzing photo & description...";
+
+  try {
+    const res = await fetch("/api/reports/analyze", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${state.token}` },
+      body: buildReportFormData(true)
+    });
+    if (res.status === 401) { handleAuthExpired(); return; }
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || "Analysis failed. You can enter attributes manually.", "error");
+      setAiBadge("Manual entry", "badge-possible");
+      return;
+    }
+    currentAnalysis = data.data;
+    const sug = currentAnalysis.suggestion;
+    setAttrField("attr-object-type", sug.object_type);
+    setAttrField("attr-color", sug.attributes.color);
+    setAttrField("attr-material", sug.attributes.material);
+    setAttrField("attr-shape", sug.attributes.shape);
+    setAttrField("attr-brand", sug.attributes.brand_or_logo);
+    setAttrField("attr-features", sug.attributes.distinctive_features);
+
+    const details = document.getElementById("ai-details");
+    const list = arr => (arr && arr.length) ? arr.map(x => escapeHtml(x)).join("; ") : "None";
+    details.innerHTML = `
+      <div><strong>User-stated:</strong> ${list(sug.user_stated_details)}</div>
+      <div><strong>Visually observed:</strong> ${list(sug.visually_observed_details)}</div>
+      <div><strong>Unknowns:</strong> ${list(sug.unknowns)}</div>
+      <div><strong>Image quality:</strong> ${escapeHtml(sug.image_quality)}</div>`;
+    details.classList.remove("hidden");
+
+    if (currentAnalysis.ai_status === "completed") {
+      setAiBadge("AI suggestions: review & edit", "badge-strong");
+      showToast("AI suggestions loaded. Please review and edit before submitting.", "success");
+    } else {
+      setAiBadge("AI unavailable: manual entry", "badge-possible");
+      showToast("AI is unavailable right now. Keyword-based suggestions were filled in; please review them manually.", "info");
+    }
+  } catch (err) {
+    setAiBadge("AI unavailable: manual entry", "badge-possible");
+    showToast("Could not reach the analysis service. Enter attributes manually.", "error");
+  } finally {
+    btn.disabled = false;
+    spinner.classList.add("hidden");
+    text.textContent = "✨ Analyze with AI (suggestions only)";
+  }
 }
 
 async function handleReportSubmit(e) {
@@ -338,65 +462,82 @@ async function handleReportSubmit(e) {
   const spinner = document.getElementById("submit-btn-spinner");
   const btnText = document.getElementById("submit-btn-text");
 
+  const formData = buildReportFormData(true);
+
+  const confirmed = {
+    object_type: document.getElementById("attr-object-type").value.trim(),
+    color: splitList("attr-color"),
+    material: splitList("attr-material"),
+    shape: splitList("attr-shape"),
+    brand_or_logo: splitList("attr-brand"),
+    distinctive_features: splitList("attr-features")
+  };
+  const hasConfirmed = confirmed.object_type || ["color", "material", "shape", "brand_or_logo", "distinctive_features"]
+    .some(k => confirmed[k].length > 0);
+  if (hasConfirmed) {
+    formData.append("confirmed_attributes", JSON.stringify(confirmed));
+  }
+  if (currentAnalysis) {
+    formData.append("analysis_id", currentAnalysis.analysis_id);
+    const sug = currentAnalysis.suggestion;
+    formData.append("ai_details", JSON.stringify({
+      user_stated_details: sug.user_stated_details,
+      visually_observed_details: sug.visually_observed_details,
+      unknowns: sug.unknowns,
+      image_quality: sug.image_quality
+    }));
+  }
+  const clueEl = document.getElementById("form-verification-clue");
+  if (clueEl && document.getElementById("form-report-type").value === "found" && clueEl.value.trim()) {
+    formData.append("verification_clue", clueEl.value.trim());
+  }
+
   submitBtn.disabled = true;
   spinner.classList.remove("hidden");
-  btnText.textContent = "Analyzing Image & Processing AI...";
-
-  const formData = new FormData();
-  formData.append("report_type", document.getElementById("form-report-type").value);
-  formData.append("title", document.getElementById("form-title").value.trim());
-  formData.append("category", document.getElementById("form-category").value);
-  formData.append("incident_date", document.getElementById("form-date").value);
-  formData.append("location", document.getElementById("form-location").value.trim());
-  formData.append("description", document.getElementById("form-description").value.trim());
-  formData.append("image", imageInput.files[0]);
-
-  // Optional custom attributes overrides
-  const customAttrs = {
-    color: document.getElementById("attr-color").value.split(",").map(s => s.trim()).filter(Boolean),
-    material: document.getElementById("attr-material").value.split(",").map(s => s.trim()).filter(Boolean),
-    brand_or_logo: document.getElementById("attr-brand").value.split(",").map(s => s.trim()).filter(Boolean),
-    distinctive_features: document.getElementById("attr-features").value.split(",").map(s => s.trim()).filter(Boolean)
-  };
-  if (Object.values(customAttrs).some(arr => arr.length > 0)) {
-    formData.append("attributes", JSON.stringify(customAttrs));
-  }
+  btnText.textContent = hasConfirmed ? "Saving report..." : "Running AI extraction & saving...";
 
   try {
     const res = await fetch("/api/reports", {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${state.token}`
-      },
+      headers: { "Authorization": `Bearer ${state.token}` },
       body: formData
     });
-    const data = await res.json();
+    if (res.status === 401) { handleAuthExpired(); return; }
+    let data = {};
+    try { data = await res.json(); } catch (_) { /* non-JSON (e.g. proxy 413) */ }
 
     if (!res.ok) {
-      showToast(data.error || "Failed to submit report", "error");
+      const messages = {
+        PHOTO_REQUIRED: "Please upload a photograph of the item (JPEG, PNG or WebP).",
+        FILE_TOO_LARGE: "That photo is too large. The maximum is 5MB.",
+        UNSUPPORTED_MEDIA_TYPE: "Only real JPEG, PNG or WebP images are accepted.",
+        INVALID_IMAGE: "The file could not be read as an image."
+      };
+      showToast(messages[data.code] || data.error || "Failed to submit report", "error");
       return;
     }
 
-    showToast("Report submitted & AI attributes extracted successfully!", "success");
+    const aiNote = data.ai_status === "completed" ? "with AI-assisted attributes" :
+      (data.ai_status === "failed" ? "(AI failed: manual attributes saved)" : "(manual attributes)");
+    showToast(`Report submitted ${aiNote}.`, "success");
     document.getElementById("report-form").reset();
     removeUploadImage(new Event("reset"));
+    currentAnalysis = null;
+    document.getElementById("ai-details").classList.add("hidden");
+    setAiBadge("Not analyzed", "badge-info");
 
-    // Navigate to the newly created report detail & matches
     const newId = data.data.id;
     state.selectedReportId = newId;
-    window.location.hash = `#report-detail?id=${newId}`;
+    window.location.hash = `#report-detail?id=${encodeURIComponent(newId)}`;
   } catch (err) {
     showToast("Server communication error while saving report", "error");
   } finally {
     submitBtn.disabled = false;
     spinner.classList.add("hidden");
-    btnText.textContent = "Submit Report & Run AI Extraction";
+    btnText.textContent = "Confirm Attributes & Submit Report";
   }
 }
 
-// ==========================================
-// REPORTS CATALOG & FILTERING
-// ==========================================
 function debounceSearch() {
   clearTimeout(state.searchDebounceTimer);
   state.searchDebounceTimer = setTimeout(() => {
@@ -449,11 +590,11 @@ function renderReportCard(report) {
   return `
     <div class="report-card" onclick="viewReportDetail('${report.id}')">
       <div class="report-img-wrap">
-        <img src="${report.image_path}" alt="${escapeHtml(report.title)}" onerror="this.src='/static/images/placeholder.png'">
+        <img src="${escapeHtml(report.image_path)}" alt="${escapeHtml(report.title)}" onerror="this.src='/static/images/placeholder.png'">
         <span class="report-badge-type ${badgeClass}">${typeText}</span>
       </div>
       <div class="report-content">
-        <h4 class="report-title">${escapeHtml(report.title)}</h4>
+        <h4 class="report-title">${report.is_demo ? '<span class="badge badge-info" style="margin-right:0.35rem;">DEMO DATA</span>' : ''}${escapeHtml(report.title)}</h4>
         <div class="report-meta">
           <span>📍 ${escapeHtml(report.location || "Campus")}</span>
           <span>📅 ${escapeHtml(report.incident_date || "Recent")}</span>
@@ -479,7 +620,7 @@ function viewReportDetail(reportId) {
 // ==========================================
 async function loadReportDetail(reportId) {
   try {
-    const res = await fetch(`/api/reports/${reportId}`, {
+    const res = await fetch(`/api/reports/${encodeURIComponent(reportId)}`, {
       headers: authHeaders(false)
     });
     const data = await res.json();
@@ -490,8 +631,9 @@ async function loadReportDetail(reportId) {
     }
 
     const report = data.data;
+    state.selectedReport = report;
     renderReportDetailCard(report);
-    loadMatchesForReport(reportId);
+    loadMatchesForReport(reportId, report);
   } catch (err) {
     showToast("Error loading report details", "error");
   }
@@ -506,11 +648,21 @@ function renderReportDetailCard(r) {
 
   // Actions
   let actionButtons = "";
-  if (!isLost && state.user && state.user.id !== r.user_id && r.status === "active") {
+  const claimable = r.status === "active" || r.status === "claim_pending";
+  if (!isLost && state.user && state.user.id !== r.user_id && claimable) {
     actionButtons += `
-      <button class="btn btn-primary btn-sm" onclick="openClaimModal('${r.id}')">
+      <button class="btn btn-primary btn-sm" onclick="openClaimModal('${escapeHtml(r.id)}')">
         🛡️ Submit Ownership Claim
       </button>
+    `;
+  }
+  if (!isLost && state.user && (r.status === "resolved" || state.user.id === r.user_id)) {
+    // The API only releases contact details to the finder, the approved claimant, or an admin
+    actionButtons += `
+      <button class="btn btn-primary btn-sm" onclick="showHandoverContact('${escapeHtml(r.id)}', 'detail-contact')">
+        🤝 View Handover Contact
+      </button>
+      <div id="detail-contact"></div>
     `;
   }
   actionsContainer.innerHTML = actionButtons;
@@ -527,7 +679,7 @@ function renderReportDetailCard(r) {
       <span class="badge badge-info">Status: ${escapeHtml(r.status)}</span>
     </div>
 
-    <img src="${r.image_path}" class="detail-img" alt="${escapeHtml(r.title)}">
+    <img src="${escapeHtml(r.image_path)}" class="detail-img" alt="${escapeHtml(r.title)}">
 
     <div>
       <h2>${escapeHtml(r.title)}</h2>
@@ -563,13 +715,30 @@ function renderReportDetailCard(r) {
   `;
 }
 
-async function loadMatchesForReport(reportId) {
+async function loadMatchesForReport(reportId, report) {
   const matchesList = document.getElementById("matches-list");
   const emptyState = document.getElementById("matches-empty");
+  emptyState.classList.add("hidden");
+
+  // Matches are private to the report's submitter (and admins); the API enforces this too.
+  const isOwner = state.user && report && state.user.id === report.user_id;
+  const isAdmin = state.user && state.user.role === "admin";
+  if (!state.token || !(isOwner || isAdmin)) {
+    matchesList.innerHTML = `<p class="text-muted text-sm">🔒 Candidate matches are only visible to the person who submitted this report.</p>`;
+    return;
+  }
+
   matchesList.innerHTML = `<p class="text-muted text-sm">Evaluating deterministic match scores...</p>`;
 
   try {
-    const res = await fetch(`/api/matches/${reportId}`);
+    const res = await fetch(`/api/matches/${encodeURIComponent(reportId)}`, {
+      headers: authHeaders(false)
+    });
+    if (res.status === 401) {
+      matchesList.innerHTML = "";
+      handleAuthExpired();
+      return;
+    }
     const data = await res.json();
     if (!res.ok || !data.data || data.data.length === 0) {
       matchesList.innerHTML = "";
@@ -587,7 +756,7 @@ async function loadMatchesForReport(reportId) {
 
 function refreshMatches() {
   if (state.selectedReportId) {
-    loadMatchesForReport(state.selectedReportId);
+    loadMatchesForReport(state.selectedReportId, state.selectedReport);
   }
 }
 
@@ -612,7 +781,7 @@ function renderMatchCard(m) {
   let claimBtn = "";
   if (cand.report_type === "found" && state.user && state.user.id !== cand.user_id) {
     claimBtn = `
-      <button class="btn btn-primary btn-xs" onclick="openClaimModal('${cand.id}')">
+      <button class="btn btn-primary btn-xs" onclick="openClaimModal('${escapeHtml(cand.id)}')">
         Claim Item
       </button>
     `;
@@ -622,14 +791,14 @@ function renderMatchCard(m) {
     <div class="match-card ${cardBorderClass}">
       <div class="match-header">
         <div style="display:flex; align-items:center; gap:0.75rem;">
-          <img src="${cand.image_path}" style="width:52px; height:52px; object-fit:cover; border-radius:6px;">
+          <img src="${escapeHtml(cand.image_path)}" style="width:52px; height:52px; object-fit:cover; border-radius:6px;">
           <div>
             <h4 style="font-size:0.95rem; margin-bottom:0.15rem;">${escapeHtml(cand.title)}</h4>
             <span class="text-xs text-muted">📍 ${escapeHtml(cand.location)} &bull; 📅 ${escapeHtml(cand.incident_date)}</span>
           </div>
         </div>
         <div style="text-align:right;">
-          <div class="score-badge ${scoreClass}">${score}<span style="font-size:0.8rem; font-weight:500;">/100</span></div>
+          <div class="score-badge ${scoreClass}" title="Deterministic ranking score: not a probability and not proof of ownership">${score}<span style="font-size:0.8rem; font-weight:500;">/100</span></div>
           <span class="score-label ${labelBadgeClass}">${escapeHtml(m.label)}</span>
         </div>
       </div>
@@ -695,14 +864,19 @@ async function handleClaimSubmit(e) {
         verification_answers: answers
       })
     });
+    if (res.status === 401) { handleAuthExpired(); return; }
     const data = await res.json();
     if (!res.ok) {
       showToast(data.error || "Claim submission failed", "error");
+      if (res.status === 429) closeModal("claim-modal");
       return;
     }
 
     closeModal("claim-modal");
-    showToast("Ownership claim submitted! The finder will review your verification details.", "success");
+    const verified = data.data && data.data.verification_status === "verified";
+    showToast(verified
+      ? "Answer verified ✓. The finder will now review and approve your claim."
+      : "Ownership claim submitted! The finder will review your verification details.", "success");
     navigate("my-reports");
   } catch (err) {
     showToast("Network error submitting claim", "error");
@@ -740,9 +914,12 @@ function renderClaimReviewCard(c) {
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.75rem;">
         <div>
           <h4 style="font-size:1.05rem;">Claim on: ${escapeHtml(c.report_title || "Found Item")}</h4>
-          <span class="text-xs text-muted">Claim ID: ${c.id} &bull; Submitted: ${new Date(c.created_at).toLocaleString()}</span>
+          <span class="text-xs text-muted">Claim ID: ${escapeHtml(c.id)} &bull; Submitted: ${new Date(c.created_at).toLocaleString()}</span>
         </div>
-        <span class="badge badge-warning">Attempts: ${c.attempt_count}/3</span>
+        <span class="badge ${c.verification_status === 'verified' ? 'badge-strong' : 'badge-warning'}">
+          ${c.verification_status === 'verified' ? '✓ Clue verified by server' : 'No private clue: review manually'}
+          &bull; Attempts: ${escapeHtml(c.attempt_count)}/3
+        </span>
       </div>
 
       <div style="background:var(--bg); padding:0.85rem; border-radius:6px; margin-bottom:1rem;">
@@ -753,10 +930,10 @@ function renderClaimReviewCard(c) {
       </div>
 
       <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
-        <button class="btn btn-danger btn-sm" onclick="reviewClaimAction('${c.id}', 'rejected')">
+        <button class="btn btn-danger btn-sm" onclick="reviewClaimAction('${escapeHtml(c.id)}', 'rejected')">
           Reject Claim
         </button>
-        <button class="btn btn-primary btn-sm" onclick="reviewClaimAction('${c.id}', 'approved')">
+        <button class="btn btn-primary btn-sm" onclick="reviewClaimAction('${escapeHtml(c.id)}', 'approved')">
           ✓ Approve Ownership
         </button>
       </div>
@@ -767,7 +944,7 @@ function renderClaimReviewCard(c) {
 async function reviewClaimAction(claimId, action) {
   const notes = prompt(`Optional internal note for ${action} claim:`, "");
   try {
-    const res = await fetch(`/api/claims/${claimId}`, {
+    const res = await fetch(`/api/claims/${encodeURIComponent(claimId)}`, {
       method: "PATCH",
       headers: authHeaders(true),
       body: JSON.stringify({ action, notes })
@@ -851,16 +1028,23 @@ async function loadMyClaims() {
       <div class="card mb-2">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <div>
-            <strong>Claim on Report ID: ${c.report_id}</strong>
-            <div class="text-xs text-muted">Submitted: ${new Date(c.created_at).toLocaleDateString()}</div>
+            <strong>Claim on: ${escapeHtml(c.report_title || c.report_id)}</strong>
+            <div class="text-xs text-muted">Submitted: ${new Date(c.created_at).toLocaleDateString()} &bull;
+              Verification: ${escapeHtml(c.verification_status || "n/a")} &bull; Attempts: ${escapeHtml(c.attempt_count)}/3</div>
           </div>
-          <span class="badge ${c.status === 'approved' ? 'badge-strong' : (c.status === 'rejected' ? 'badge-danger' : 'badge-possible')}">
-            ${c.status.toUpperCase()}
+          <span class="badge ${c.status === 'approved' ? 'badge-strong' : (c.status === 'rejected' || c.status === 'locked' ? 'badge-danger' : 'badge-possible')}">
+            ${escapeHtml(String(c.status || "").toUpperCase())}
           </span>
         </div>
         ${c.status === 'approved' ? `
           <div class="alert alert-success text-xs" style="margin-top:0.75rem;">
-            🎉 Ownership Approved! View the report or contact desk for item collection.
+            🎉 Ownership Approved! Get the finder's contact details to arrange the handover.
+            <div style="margin-top:0.5rem;">
+              <button class="btn btn-primary btn-xs" onclick="showHandoverContact('${escapeHtml(c.report_id)}', 'claim-contact-${escapeHtml(c.id)}')">
+                🤝 View Handover Contact
+              </button>
+            </div>
+            <div id="claim-contact-${escapeHtml(c.id)}"></div>
           </div>
         ` : ''}
       </div>
@@ -938,8 +1122,47 @@ function handleModalOverlayClick(e, modalId) {
   }
 }
 
+// ==========================================
+// HANDOVER CONTACT (released only after an approved claim)
+// ==========================================
+async function showHandoverContact(reportId, containerId) {
+  const container = document.getElementById(containerId);
+  try {
+    const res = await fetch(`/api/reports/${encodeURIComponent(reportId)}/contact`, {
+      headers: authHeaders(false)
+    });
+    if (res.status === 401) {
+      handleAuthExpired();
+      return;
+    }
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || "Contact details are not available", "error");
+      return;
+    }
+    const c = data.data;
+    if (container) {
+      container.innerHTML = `
+        <div class="card" style="margin-top:0.75rem; padding:0.85rem;">
+          <strong class="text-sm">Handover contacts for ${escapeHtml(c.report_title)}</strong>
+          <div class="text-sm" style="margin-top:0.4rem;">Finder: ${escapeHtml(c.finder.name)} (${escapeHtml(c.finder.email || "N/A")})</div>
+          <div class="text-sm">Owner: ${c.claimant ? `${escapeHtml(c.claimant.name)} (${escapeHtml(c.claimant.email || "N/A")})` : "No approved claimant yet"}</div>
+          <p class="text-xs text-muted" style="margin-top:0.4rem;">${escapeHtml(c.handover_instructions)}</p>
+        </div>
+      `;
+    }
+  } catch (err) {
+    showToast("Error loading contact details", "error");
+  }
+}
+
+function handleAuthExpired() {
+  showToast("Your session has expired. Please log in again.", "error");
+  logout();
+}
+
 function escapeHtml(str) {
-  if (!str) return "";
+  if (str === null || str === undefined) return "";
   return String(str)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

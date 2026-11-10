@@ -206,19 +206,115 @@ When reports have identical match scores, ordering is guaranteed deterministic b
 ## 4. Privacy & Contact Security Architecture
 
 ### 4.1 Contact Information Shield
-- Public `GET /api/reports` and `GET /api/reports/<id>` return submitter name and display `submitter_email = "[PROTECTED — AVAILABLE UPON APPROVED CLAIM]"`.
-- Real email addresses are strictly excluded from all public responses.
+- `GET /api/reports` and `GET /api/reports/<id>` never return e-mail addresses of other users
+  (`submitter_email` is masked unless the requester is the submitter).
+- Matches, claim lists and report responses contain no contact fields.
 
-### 4.2 Authorized Handover Endpoint
-- Endpoint: `GET /api/reports/<id>/contact`
-- Requirements:
-  1. Valid JWT token.
-  2. Approved claim on the report must exist.
-  3. Requester identity must match either the report's finder, the approved claimant, or an administrator.
-  4. Returns direct contact details for both parties and recommended campus security handover instructions.
-  5. Any other requester receives `403 Forbidden`.
+### 4.2 Authorized Handover Endpoint — `GET /api/reports/<id>/contact`
+1. Valid JWT required (401 otherwise); found reports only.
+2. Allowed: **the finder** of that found report, or **the claimant whose claim the finder approved**.
+3. Everyone else, including administrators, receives `403` (design report 9.2: no admin bypass).
+4. Returns finder (and, once approved, claimant) contact plus safe handover instructions.
 
-### 4.3 Claim Verification Protection
-- Claimants provide identifying evidence (e.g. engravings, internal pockets, passcodes).
-- Private verification answers are only visible to the finder and campus administrators.
-- Claim attempt limit: 3 attempts per claimant. Exceeding 3 failed attempts sets `status = locked`.
+### 4.3 Claim Verification (server-side)
+- When creating a found report the finder may set a **private clue** (`verification_clue`, 3–300 chars).
+  It is stored in the separate `verification_clues` collection and is never returned by any endpoint;
+  the owner only sees `has_private_clue: true`.
+- `POST /api/claims` compares the claimant's answer with the clue on the server
+  (`app/services/verification_service.py`): lower-casing, punctuation removal, stop-word removal and fixed
+  suffix stripping, then **verified if ≥ 60 %** (`CLAIM_VERIFICATION_THRESHOLD`) of the clue's keywords
+  appear in the answer. Failures return a generic message with remaining attempts (400).
+- `verification_status`: `verified` | `failed` | `not_required` (no clue set → finder reviews free text).
+- Attempts are counted atomically (`find_one_and_update` with `attempt_count < MAX`). At 3 attempts without
+  verification the claim is `locked`; further requests get **429**. A unique index on
+  `(report_id, claimant_id)` stops a user opening a second claim to bypass the limit.
+- The finder (or admin) sees only `verified` / `not_required` pending claims and can approve only those.
+  Approval resolves the report and rejects competing pending claims. Reviews are atomic
+  (`status: pending` precondition) so a claim cannot be decided twice (409).
+
+## 5. Report Submission & AI Review Workflow
+
+1. `POST /api/reports/analyze` (JWT, rate-limited): validates title, description and photo, runs Gemini on a
+   temporary copy (deleted afterwards) and returns `{analysis_id, ai_status, suggestion}`. Nothing is saved.
+2. The UI fills editable fields with the suggestions, clearly labelled *AI suggestions*, and shows
+   user-stated vs visually observed details vs unknowns. If AI failed it shows *AI unavailable: manual entry*.
+3. `POST /api/reports` (multipart) with `confirmed_attributes` (JSON), optional `analysis_id`, `ai_details`
+   and `verification_clue`. The confirmed attributes are normalized and saved (`attribute_source:
+   user_confirmed`). `ai_status` is taken from the linked `ai_logs` entry (each analysis can be linked only once),
+   never from the client.
+4. Without `confirmed_attributes` the server runs extraction itself with the same fallback
+   (`attribute_source: ai | rule_based_fallback`).
+
+Upload validation: missing photo → 400 `PHOTO_REQUIRED`; > 5 MB → 413 `FILE_TOO_LARGE`; wrong extension or
+decoded format not JPEG/PNG/WebP, corrupt image or decompression bomb → 415. Dates must be within
+`MIN_INCIDENT_DATE` (2020-01-01) … tomorrow.
+
+## 6. Report Lifecycle
+
+| Status | Set by | In search? | Match candidate? |
+|---|---|---|---|
+| `active` | backend on creation; claim rejected with no other pending claims | yes | yes |
+| `claim_pending` | backend when a verified/not-required claim is submitted | no (filter by status) | yes (so the real owner can still claim) |
+| `resolved` | finder approval, or owner after handover | no | no |
+| `closed` / `inactive` | owner or admin (DELETE closes and rejects pending claims) | no | no |
+| `under_review` | admin only | no | yes |
+
+Owners may set `active`, `resolved`, `inactive`, `closed`; workflow states are admin-only.
+
+## 7. API Summary
+
+| Method & route | Auth | Notes |
+|---|---|---|
+| POST `/api/auth/register` | public, rate-limited | students only unless valid `admin_code` |
+| POST `/api/auth/login` | public, rate-limited | returns JWT |
+| GET `/api/auth/me` | JWT | safe profile |
+| POST `/api/reports/analyze` | JWT, rate-limited | AI suggestions only |
+| POST `/api/reports` | JWT | photo required; 400/413/415 codes |
+| GET `/api/reports` | public | active by default; `report_type`, `category`, `search`, `location`, `page`, `limit` |
+| GET `/api/reports/<id>` | optional JWT | privacy-safe detail |
+| PATCH `/api/reports/<id>` | owner/admin | validated fields; restricted statuses |
+| DELETE `/api/reports/<id>` | owner/admin | soft close |
+| GET `/api/reports/<id>/contact` | finder / approved claimant | 403 otherwise |
+| GET `/api/matches/<report_id>` | owner/admin | ranked deterministic candidates |
+| POST `/api/claims` | JWT, rate-limited | server verification; 400 failed, 429 locked, 409 closed item |
+| GET `/api/claims?scope=mine\|review` | JWT | own claims / claims you may decide |
+| GET `/api/claims/<id>` | claimant, finder, admin | |
+| PATCH `/api/claims/<id>` | finder/admin | `{"action": "approved"\|"rejected", "notes"}` |
+| GET `/api/admin/dashboard\|reports\|claims` | admin | |
+| GET `/api/health` | public | DB + AI status; 503 if DB unreachable |
+
+Error format: `{"success": false, "error": "<message>", "code": "<CODE>"}`. Unhandled errors return 500 without
+stack traces.
+
+## 8. Deployment Architecture
+
+```
+Browser ──HTTPS──► Render web service (gunicorn wsgi:app, 1 worker × 8 threads, ProxyFix)
+                     ├── MongoDB Atlas M0 (data + GridFS bucket "images")
+                     └── Gemini API (server-side key)
+```
+- `render.yaml` provisions the service, generated secrets, health check and env vars.
+- `wsgi.py` seeds demo data once if the database has no users (never wipes data).
+- Images are written to local disk and mirrored to GridFS; `/uploads/<name>` serves from disk or GridFS.
+- `FLASK_ENV=production` refuses default secrets and disables the in-memory DB fallback.
+
+## 9. Threat Model (summary)
+
+| Threat | Control |
+|---|---|
+| Privilege escalation via registration | role ignored; admin requires server-side invite code |
+| Contact harvesting | dedicated endpoint, relationship checks, no contact fields elsewhere, tests |
+| Claim brute force / replay | private clue, atomic attempt counter, unique claim per user/item, 429, rate limit |
+| Clue leakage | separate collection, never serialized; tests scan all public responses |
+| Malicious uploads | extension + decoded format check, size caps, random names, strict serve pattern |
+| Regex injection / ReDoS in search | `re.escape` on all user search input |
+| Credential stuffing | bcrypt, generic login errors, per-IP rate limit |
+| Secrets exposure | `.env` git-ignored, Render env vars, no secrets in frontend or logs |
+| Silent data loss | production refuses in-memory fallback; health reports `degraded` |
+
+## 10. Key Trade-offs
+
+- Keyword-based clue verification is deterministic and explainable but not semantic; finder approval remains
+  the final safeguard.
+- GridFS keeps hosting at zero cost with one fewer external account, at the price of using Atlas storage.
+- An in-memory rate limiter is enough for a single-instance demo but not for horizontal scaling.

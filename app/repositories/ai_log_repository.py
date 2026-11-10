@@ -44,3 +44,24 @@ class AILogRepository:
         db = get_db()
         cursor = db.ai_logs.find().sort("created_at", -1).limit(limit)
         return [cls._format(doc) for doc in cursor]
+
+    @classmethod
+    def find_by_id(cls, log_id: str) -> dict | None:
+        db = get_db()
+        try:
+            return cls._format(db.ai_logs.find_one({"_id": ObjectId(log_id)}))
+        except Exception:
+            return None
+
+    @classmethod
+    def attach_report(cls, log_id: str, report_id: str) -> bool:
+        """Links a preview analysis to the report that was eventually saved (only once)."""
+        db = get_db()
+        try:
+            res = db.ai_logs.update_one(
+                {"_id": ObjectId(log_id), "report_id": None},
+                {"$set": {"report_id": str(report_id)}}
+            )
+            return res.modified_count == 1
+        except Exception:
+            return False

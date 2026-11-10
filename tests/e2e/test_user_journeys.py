@@ -60,7 +60,7 @@ def test_complete_lost_to_handover_journey(client, image_factory):
     found_id = found_res.get_json()["data"]["id"]
 
     # Step 5: Deterministic Matching Engine runs
-    match_res = client.get(f"/api/matches/{lost_id}")
+    match_res = client.get(f"/api/matches/{lost_id}", headers=alice_headers)
     assert match_res.status_code == 200
     matches = match_res.get_json()["data"]
     assert len(matches) > 0
@@ -140,12 +140,12 @@ def test_resolved_reports_excluded_from_matching(client, image_factory, student_
     found_id = found_res.get_json()["data"]["id"]
 
     # Before resolving: found item appears in matches
-    m1 = client.get(f"/api/matches/{lost_id}").get_json()["data"]
+    m1 = client.get(f"/api/matches/{lost_id}", headers=student_auth_headers).get_json()["data"]
     assert any(m["candidate_report"]["id"] == found_id for m in m1)
 
     # Now mark found item as resolved
     client.patch(f"/api/reports/{found_id}", json={"status": "resolved"}, headers=finder_auth_headers)
 
     # After resolving: resolved found item must NOT appear in active matches
-    m2 = client.get(f"/api/matches/{lost_id}").get_json()["data"]
+    m2 = client.get(f"/api/matches/{lost_id}", headers=student_auth_headers).get_json()["data"]
     assert not any(m["candidate_report"]["id"] == found_id for m in m2)
